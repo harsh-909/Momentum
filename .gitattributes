@@ -1,0 +1,16 @@
+# Deploy exclusion: these paths stay version-controlled in Git (logged in history),
+# but are stripped from a deploy bundle built with `git archive`. This keeps the dev
+# infrastructure logged without ever shipping it to production.
+#
+# Build a clean deploy bundle with:
+#   git archive --format=zip -o momentum-deploy.zip HEAD
+# The zip will contain only the runtime app (index.html, app.js, server.py,
+# vendor/, Momentum.pyw) - none of the dev/test/tracking files below.
+
+tests/**          export-ignore
+.claude/**        export-ignore
+workMatter.md     export-ignore
+FEATURES.md       export-ignore
+CLAUDE.md         export-ignore
+.gitignore        export-ignore
+.gitattributes    export-ignore

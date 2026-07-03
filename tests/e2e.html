@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Momentum e2e (pending)</title>
+</head>
+<body>
+  <h1>Momentum e2e runner</h1>
+  <p>This page loads the real app in the iframe below and drives it as "testuser".
+     A headless browser reads the JSON result out of the block at the bottom.</p>
+  <iframe id="app" src="/" style="width:960px;height:760px;border:1px solid #ccc"></iframe>
+  <pre id="__results__">[]</pre>
+
+  <script>
+  // ------------------------------------------------------------------
+  // Browser end-to-end tests for the goal-editing feature. Runs the REAL
+  // index.html + app.js (loaded in the iframe) so there is no template drift.
+  // Results are written into #__results__ as JSON for the Node runner to parse.
+  // ------------------------------------------------------------------
+  const results = [];
+  const rec = (name, ok, detail) => results.push({ name, ok: !!ok, detail: detail ? String(detail) : '' });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  let done = false;
+  function finish() {
+    if (done) return;
+    done = true;
+    document.getElementById('__results__').textContent = JSON.stringify(results);
+    document.getElementById('__results__').setAttribute('data-done', '1');
+    document.title = 'Momentum e2e (done)';
+  }
+
+  async function waitFor(fn, timeout = 10000, step = 50) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      try { const v = fn(); if (v) return v; } catch (e) { /* keep polling */ }
+      await sleep(step);
+    }
+    return null;
+  }
+
+  async function main() {
+    const suite = (new URLSearchParams(location.search).get('suite') || 'feature').toLowerCase();
+    const iframe = document.getElementById('app');
+    const win = () => iframe.contentWindow;
+    const doc = () => iframe.contentDocument;
+    const q = (sel) => doc().querySelector(sel);
+    const fireInput = (el) => el.dispatchEvent(new (win().Event)('input', { bubbles: true }));
+
+    // 1. Wait for Alpine + the app component to initialise inside the iframe.
+    const comp = await waitFor(() => {
+      const w = win(), d = doc();
+      if (!w || !d) return null;
+      const root = d.querySelector('[x-data]');
+      if (!w.Alpine || !root) return null;
+      const c = w.Alpine.$data(root);
+      return (c && typeof c.signup === 'function' && c.today) ? c : null;
+    });
+    if (!comp) { rec('app + Alpine initialise in iframe', false, 'component never became ready'); return finish(); }
+    rec('app + Alpine initialise in iframe', true);
+
+    // 2. Sign up / log in as testuser (fresh isolated env -> signup creates it).
+    try { await comp.signup('testuser'); } catch (e) { rec('signup testuser', false, e); return finish(); }
+    await sleep(150);
+    rec('signup testuser logs in', comp.loggedIn === true);
+
+    // 3. Add a goal with one subtask, confirm it renders.
+    comp.newGoal = { topic: 'Edit target', hours: 1, subtasksText: 'first sub' };
+    comp.addGoal();
+    await sleep(120);
+    const goal = comp.goals[comp.today] && comp.goals[comp.today][0];
+    rec('goal added and rendered', !!goal && !!q('.goal-card'));
+
+    // 4. Enter edit mode via the pencil button.
+    const editBtn = q('button[title="Edit goal"]');
+    rec('edit (pencil) button present', !!editBtn);
+    if (editBtn) editBtn.click();
+    await sleep(120);
+    rec('edit mode shows title textarea (x-if)', !!q('textarea[placeholder="Goal title"]'));
+
+    const subTa = q('textarea[placeholder="Subtask"]');
+    rec('edit mode shows subtask textarea', !!subTa);
+
+    // 5. autoGrow + x-model on the subtask textarea.
+    if (subTa) {
+      subTa.value = 'one line';
+      fireInput(subTa);
+      await sleep(60);
+      const h1 = subTa.offsetHeight;
+      subTa.value = 'l1\nl2\nl3\nl4\nl5';
+      fireInput(subTa);
+      await sleep(60);
+      const h2 = subTa.offsetHeight;
+      rec('autoGrow: textarea grows with line count', h2 > h1, 'h1=' + h1 + ' h2=' + h2);
+      rec('x-model updates subtask text', goal.subtasks[0].text === 'l1\nl2\nl3\nl4\nl5');
+
+      // 6. Content with blank lines, to verify cleanup on Done.
+      subTa.value = 'keep\n\n\nlines';
+      fireInput(subTa);
+      await sleep(60);
+    }
+
+    // 7. Done -> cleanText strips blank lines, edit fields disappear.
+    const doneBtn = q('button[title="Done editing"]');
+    rec('done (check) button present', !!doneBtn);
+    if (doneBtn) doneBtn.click();
+    await sleep(120);
+    rec('blank lines stripped on Done', goal.subtasks[0] && goal.subtasks[0].text === 'keep\nlines',
+        goal.subtasks[0] && JSON.stringify(goal.subtasks[0].text));
+    rec('edit fields removed after Done', !q('textarea[placeholder="Subtask"]'));
+    const card = q('.goal-card');
+    rec('display shows cleaned multi-line text',
+        !!card && card.textContent.includes('keep') && card.textContent.includes('lines'));
+
+    // 8. Empty a subtask -> it is dropped on Done.
+    const editBtn2 = q('button[title="Edit goal"]');
+    if (editBtn2) editBtn2.click();
+    await sleep(100);
+    const subTa2 = q('textarea[placeholder="Subtask"]');
+    if (subTa2) { subTa2.value = ''; fireInput(subTa2); await sleep(60); }
+    const doneBtn2 = q('button[title="Done editing"]');
+    if (doneBtn2) doneBtn2.click();
+    await sleep(120);
+    rec('emptied subtask removed on Done', goal.subtasks.length === 0, 'len=' + goal.subtasks.length);
+
+    // 9. Full suite: a couple of broader UI smoke checks.
+    if (suite === 'full') {
+      const chk = q('.goal-card button.chk-btn');
+      if (chk) chk.click();
+      await sleep(100);
+      rec('full: clicking the checkbox completes the goal', goal.completed === true);
+
+      comp.activeTab = 'backlog';
+      await sleep(80);
+      rec('full: tab navigation switches to backlog', comp.activeTab === 'backlog');
+    }
+
+    finish();
+  }
+
+  // Safety net: never leave the runner hanging without a result.
+  setTimeout(() => { if (!done) { rec('overall completion', false, 'timed out'); finish(); } }, 40000);
+  main().catch((e) => { rec('runner exception', false, (e && e.stack) || e); finish(); });
+  </script>
+</body>
+</html>
