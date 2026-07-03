@@ -23,6 +23,7 @@
       newHabit: { topic: '', hours: 0.5, subtasksText: '', days: [0,1,2,3,4,5,6] },
       habitFormOpen: false,
       editingId: null,
+      editingGoalId: null,   // which goal is in inline-edit mode; transient, never persisted
       weekdayNames: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
       weekdayShort: ['Su','Mo','Tu','We','Th','Fr','Sa'],
       historyFilter: 'all',
@@ -69,7 +70,7 @@
         await this.fetchUsers();
         // Watchers are registered once here (not on login) so logging out and back
         // in never stacks duplicate watchers. They no-op until a user is loaded.
-        this.$watch('selectedDate', (d) => this.ensureRecurring(d));
+        this.$watch('selectedDate', (d) => { this.editingGoalId = null; this.ensureRecurring(d); });
         this.$watch('activeTab', (tab) => {
           if (tab === 'metrics' && this.loggedIn) this.$nextTick(() => this.renderCharts());
         });
@@ -365,6 +366,25 @@
         this.save();
       },
       deleteGoal(date, gi) { this.goals[date].splice(gi, 1); this.save(); },
+
+      // ---- Inline goal editing ----
+      // Live edits: the template binds title/hours/subtask text straight to the goal
+      // via x-model, so every keystroke mutates state and the debounced save() persists it.
+      startEditGoal(goal) { this.editingGoalId = goal.id; },
+      stopEditGoal(goal) {
+        goal.topic = (goal.topic || '').trim();
+        const h = parseFloat(goal.hours);
+        goal.hours = isNaN(h) || h < 0 ? 0 : h;   // guard against a cleared/negative hours field
+        this.editingGoalId = null;
+        this.save();
+      },
+      removeSubtask(date, gi, si) {
+        const goal = this.goals[date][gi];
+        goal.subtasks.splice(si, 1);
+        // Recompute completion from what remains; don't let an emptied list flip the goal complete.
+        if (goal.subtasks.length > 0) goal.completed = goal.subtasks.every(s => s.completed);
+        this.save();
+      },
       subtaskProgress(goal) {
         const done = goal.subtasks.filter(s => s.completed).length;
         return `${done}/${goal.subtasks.length}`;

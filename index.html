@@ -310,21 +310,33 @@
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 flex-wrap">
                   <span x-show="goal.recurringId" class="text-xs px-2 py-0.5 rounded-full" style="background:rgba(52,211,153,0.15);border:1px solid rgba(52,211,153,0.3);color:#34d399" title="Daily habit">🔁 habit</span>
-                  <span class="font-semibold text-white topic-text" x-text="goal.topic"></span>
-                  <span class="text-xs px-2 py-0.5 rounded-full pill-accent" x-text="goal.hours + 'h planned'"></span>
+                  <span x-show="editingGoalId !== goal.id" class="font-semibold text-white topic-text" x-text="goal.topic"></span>
+                  <input x-show="editingGoalId === goal.id" x-model="goal.topic" @input="save()" type="text" placeholder="Goal title" class="font-semibold bg-white/5 border border-white/10 rounded-lg px-2.5 py-1 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-400" />
+                  <span x-show="editingGoalId !== goal.id" class="text-xs px-2 py-0.5 rounded-full pill-accent" x-text="goal.hours + 'h planned'"></span>
+                  <span x-show="editingGoalId === goal.id" class="text-xs flex items-center gap-1" style="color:var(--muted)">
+                    <input x-model.number="goal.hours" @input="save()" type="number" min="0" step="0.25" class="w-14 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-purple-400" />h planned
+                  </span>
                   <span x-show="goal.subtasks && goal.subtasks.length > 0" class="text-xs" style="color:var(--muted)" x-text="subtaskProgress(goal)"></span>
                 </div>
 
                 <!-- Subtasks -->
                 <div x-show="goal.subtasks && goal.subtasks.length > 0" class="mt-2.5 space-y-1.5">
                   <template x-for="(sub, si) in goal.subtasks" :key="sub.id">
-                    <label class="flex items-center gap-2.5 cursor-pointer group">
-                      <span class="w-4 h-4 rounded-md border flex items-center justify-center flex-shrink-0 transition-all" :class="sub.completed ? 'grad-btn border-transparent' : 'border-white/25 group-hover:border-purple-400'">
-                        <svg x-show="sub.completed" class="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="4"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                      </span>
-                      <input type="checkbox" class="hidden" :checked="sub.completed" @change="toggleSubtask(selectedDate, gi, si)" />
-                      <span class="text-sm transition-colors" style="color:var(--muted)" :class="sub.completed ? 'line-through opacity-50' : 'group-hover:text-white'" x-text="sub.text"></span>
-                    </label>
+                    <div>
+                      <!-- display -->
+                      <label x-show="editingGoalId !== goal.id" class="flex items-center gap-2.5 cursor-pointer group">
+                        <span class="w-4 h-4 rounded-md border flex items-center justify-center flex-shrink-0 transition-all" :class="sub.completed ? 'grad-btn border-transparent' : 'border-white/25 group-hover:border-purple-400'">
+                          <svg x-show="sub.completed" class="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="4"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                        </span>
+                        <input type="checkbox" class="hidden" :checked="sub.completed" @change="toggleSubtask(selectedDate, gi, si)" />
+                        <span class="text-sm transition-colors" style="color:var(--muted)" :class="sub.completed ? 'line-through opacity-50' : 'group-hover:text-white'" x-text="sub.text"></span>
+                      </label>
+                      <!-- edit: rewrite text or remove; completion state is preserved -->
+                      <div x-show="editingGoalId === goal.id" class="flex items-center gap-2">
+                        <input type="text" x-model="sub.text" @input="save()" placeholder="Subtask" class="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-400" />
+                        <button @click="removeSubtask(selectedDate, gi, si)" class="text-slate-500 hover:text-red-400 w-7 h-7 rounded-lg transition-colors flex items-center justify-center flex-shrink-0" title="Remove subtask">✕</button>
+                      </div>
+                    </div>
                   </template>
                 </div>
 
@@ -343,6 +355,8 @@
               </div>
 
               <div class="flex items-center gap-0.5 flex-shrink-0">
+                <button x-show="editingGoalId !== goal.id" @click="startEditGoal(goal)" class="text-slate-500 hover:text-purple-400 w-7 h-7 rounded-lg transition-colors flex items-center justify-center" title="Edit goal">✎</button>
+                <button x-show="editingGoalId === goal.id" @click="stopEditGoal(goal)" class="text-emerald-400 hover:text-emerald-300 w-7 h-7 rounded-lg transition-colors flex items-center justify-center" title="Done editing">✓</button>
                 <button @click="goal.addingSubtask = true; $nextTick(() => document.getElementById(`sub-input-${goal.id}`)?.focus())" class="text-slate-500 hover:text-purple-400 w-7 h-7 rounded-lg transition-colors flex items-center justify-center" title="Add subtask">＋</button>
                 <button x-show="!goal.recurringId" @click="moveToBacklog(selectedDate, gi)" class="text-slate-500 hover:text-orange-400 w-7 h-7 rounded-lg transition-colors flex items-center justify-center" title="Move to backlog">↩</button>
                 <button @click="deleteGoal(selectedDate, gi)" class="text-slate-500 hover:text-red-400 w-7 h-7 rounded-lg transition-colors flex items-center justify-center" title="Delete">✕</button>
