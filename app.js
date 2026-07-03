@@ -17,6 +17,9 @@
       recurring: [],
       seeded: {},
       newGoal: { topic: '', hours: 1, subtasksText: '' },
+      // Transient "new subtask" input text, keyed by goal id. Intentionally NOT
+      // part of snapshot() - half-typed drafts must never be persisted to disk.
+      subtaskDrafts: {},
       newHabit: { topic: '', hours: 0.5, subtasksText: '', days: [0,1,2,3,4,5,6] },
       habitFormOpen: false,
       editingId: null,
@@ -350,11 +353,10 @@
       },
       commitSubtask(date, gi) {
         const goal = this.goals[date][gi];
-        const inputEl = document.getElementById(`sub-input-${goal.id}`);
-        const text = inputEl ? inputEl.value.trim() : '';
+        const text = (this.subtaskDrafts[goal.id] || '').trim();
         if (!text) return;
         goal.subtasks.push({ id: this.uid(), text, completed: false });
-        if (inputEl) inputEl.value = '';
+        delete this.subtaskDrafts[goal.id];   // clear the transient draft
         goal.completed = false;
         this.save();
       },

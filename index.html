@@ -330,7 +330,7 @@
 
                 <!-- Add subtask inline -->
                 <div x-show="goal.addingSubtask" class="mt-2.5 flex gap-2">
-                  <input type="text" :id="`sub-input-${goal.id}`" @keydown.enter="commitSubtask(selectedDate, gi)" @keydown.escape="goal.addingSubtask = false" placeholder="New subtask..." class="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-400" />
+                  <input type="text" :id="`sub-input-${goal.id}`" x-model="subtaskDrafts[goal.id]" @keydown.enter="commitSubtask(selectedDate, gi)" @keydown.escape="goal.addingSubtask = false" placeholder="New subtask..." class="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-400" />
                   <button @click="commitSubtask(selectedDate, gi)" class="text-xs font-semibold px-2 rounded-lg pill-accent">Add</button>
                 </div>
 
