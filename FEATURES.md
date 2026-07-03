@@ -4,6 +4,8 @@ Momentum is a daily-goals and habit tracker.
 It runs on your machine via a small local server (`server.py`) and stores each person's data as a JSON file in the `userData/` folder next to the project - no cloud, no external service, no sync.
 The interface is organized into five tabs: **Today**, **Backlog**, **Habits**, **History**, and **Momentum** (metrics).
 
+> This file documents what the app does. Work in progress and task tracking live in `workMatter.md`.
+
 ## Accounts & data (local, multi-user)
 
 - **Double-click to launch** - open `Momentum.pyw` and the app starts silently (no console window) and opens in your browser. Double-clicking again while it's running just opens another tab.
@@ -30,6 +32,7 @@ The main workspace for a single day's goals.
 - **Add a goal** - each goal has a topic, planned hours (0.25-24h in quarter-hour steps), and optional subtasks (one per line). In the evening the button reads "Add a goal for tomorrow".
 - **Complete a goal** - tap the checkbox; completing it fires a **confetti** celebration and auto-checks all its subtasks.
 - **Subtasks** - add them inline, check them off individually; completing every subtask auto-completes the parent goal, and adding a new one re-opens the parent. A `done/total` counter is shown.
+- **Edit a goal** - open inline edit (✎) to rewrite the title, adjust planned hours, and edit or remove subtasks in auto-growing text fields. Blank lines are trimmed and emptied subtasks dropped on save (✓ Done), while subtask completion is preserved. Works on habit-derived goals too.
 - **Log actual hours** - once a goal is complete you can record how many hours you actually spent, separate from the planned estimate.
 - **Move to backlog** - manually send a single unfinished goal to the backlog (not available for habit-generated goals).
 - **End Day** ("🌙") - sweeps all unfinished, non-habit goals for the day into the backlog in one action. Habits are intentionally left behind (a missed habit just stays missed).

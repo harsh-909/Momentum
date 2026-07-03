@@ -5,3 +5,14 @@ __pycache__/
 # Personal user data - your actual goals/habits, not app code.
 # Keep this out of version history; it's private and changes constantly.
 userData/
+
+# Personal, machine-local Claude Code settings (not shared across machines).
+# Note: this is about NOT logging a personal file. Shared dev tooling (tests/,
+# .claude/commands/) is committed but kept out of deploys via .gitattributes.
+.claude/settings.local.json
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+
