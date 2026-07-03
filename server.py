@@ -19,7 +19,10 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(ROOT, "userData")
+# Data dir defaults to ./userData, but can be redirected (e.g. to a temp dir) via
+# MOMENTUM_DATA_DIR so the test suite runs against an isolated environment and
+# never touches real user data. Production/normal use is unaffected.
+DATA_DIR = os.environ.get("MOMENTUM_DATA_DIR") or os.path.join(ROOT, "userData")
 DEFAULT_PORT = 8899
 MAX_BODY = 8 * 1024 * 1024  # 8 MB cap - guards against a runaway payload
 
