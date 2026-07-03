@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html lang="en" x-data="app()" x-init="init()">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Momentum · Daily Goals</title>
+  <!-- All dependencies are vendored locally (vendor/) - the app runs fully offline. -->
+  <script src="vendor/tailwind.js"></script>
+  <script defer src="vendor/alpine.min.js"></script>
+  <script src="vendor/chart.umd.min.js"></script>
+  <link href="vendor/fonts/fonts.css" rel="stylesheet">
+  <style>
+    [x-cloak] { display: none !important; }
+
+    :root {
+      --bg: #14121f;
+      --card: rgba(255,255,255,0.05);
+      --card-border: rgba(255,255,255,0.09);
+      --text: #ece9f5;
+      --muted: #a49fc0;
+      --accent: #a78bfa;
+      --accent2: #f472b6;
+      --accent3: #fbbf24;
+      --good: #34d399;
+    }
+
+    * { -webkit-tap-highlight-color: transparent; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* Animated aurora background */
+    .aurora {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(90px);
+      opacity: 0.5;
+      animation: float 22s ease-in-out infinite;
+    }
+    .blob1 { width: 480px; height: 480px; background: #7c3aed; top: -140px; left: -100px; }
+    .blob2 { width: 420px; height: 420px; background: #db2777; top: 30%; right: -120px; animation-delay: -7s; }
+    .blob3 { width: 400px; height: 400px; background: #2563eb; bottom: -140px; left: 25%; animation-delay: -14s; }
+    @keyframes float {
+      0%,100% { transform: translate(0,0) scale(1); }
+      33% { transform: translate(40px,-50px) scale(1.1); }
+      66% { transform: translate(-30px,40px) scale(0.95); }
+    }
+
+    .content { position: relative; z-index: 1; }
+
+    .serif { font-family: 'Fraunces', serif; }
+
+    .glass {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    .glass-hover { transition: all 0.2s ease; }
+    .glass-hover:hover { background: rgba(255,255,255,0.08); transform: translateY(-1px); }
+
+    .grad-text {
+      background: linear-gradient(120deg, #a78bfa, #f472b6 60%, #fbbf24);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .grad-btn {
+      background: linear-gradient(120deg, #8b5cf6, #ec4899);
+      transition: all 0.2s ease;
+    }
+    .grad-btn:hover { filter: brightness(1.1); box-shadow: 0 8px 24px -6px rgba(236,72,153,0.5); }
+
+    input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+
+    .tab-active {
+      background: linear-gradient(120deg, rgba(139,92,246,0.25), rgba(236,72,153,0.25));
+      color: #fff;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+    }
+
+    ::-webkit-scrollbar { width: 7px; height: 7px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 4px; }
+
+    .fade-in { animation: fadeIn 0.35s cubic-bezier(0.16,1,0.3,1); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    .pop { animation: pop 0.4s cubic-bezier(0.34,1.56,0.64,1); }
+    @keyframes pop { 0% { transform: scale(0.8); } 50% { transform: scale(1.08); } 100% { transform: scale(1); } }
+
+    .completed-goal { opacity: 0.55; }
+    .completed-goal .topic-text { text-decoration: line-through; }
+
+    /* Progress ring */
+    .ring-track { stroke: rgba(255,255,255,0.08); }
+    .ring-fill { stroke: url(#ringGrad); stroke-linecap: round; transition: stroke-dashoffset 0.6s cubic-bezier(0.16,1,0.3,1); }
+
+    /* Confetti */
+    .confetti-piece {
+      position: fixed;
+      width: 10px; height: 14px;
+      top: -20px;
+      z-index: 9999;
+      pointer-events: none;
+      animation: confettiFall linear forwards;
+    }
+    @keyframes confettiFall {
+      to { transform: translateY(105vh) rotate(720deg); opacity: 0; }
+    }
+
+    .goal-card { transition: all 0.25s cubic-bezier(0.16,1,0.3,1); }
+    .goal-card:hover { border-color: rgba(167,139,250,0.4); }
+
+    .chk-btn { transition: all 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+
+    .quote-fade { animation: fadeIn 0.6s ease; }
+
+    .pill-accent { background: rgba(167,139,250,0.16); border: 1px solid rgba(167,139,250,0.3); color: #c4b5fd; }
+  </style>
+</head>
+<body>
+  <!-- Aurora background -->
+  <div class="aurora">
+    <div class="blob blob1"></div>
+    <div class="blob blob2"></div>
+    <div class="blob blob3"></div>
+  </div>
+
+  <!-- Hidden SVG gradient def for rings -->
+  <svg width="0" height="0" style="position:absolute">
+    <defs>
+      <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#a78bfa"/>
+        <stop offset="60%" stop-color="#f472b6"/>
+        <stop offset="100%" stop-color="#fbbf24"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <div class="content">
+
+  <!-- ===== USERNAME LOGIN / ONBOARDING MODAL ===== -->
+  <div x-show="!loggedIn" x-cloak class="fixed inset-0 z-[100] flex items-center justify-center p-4" style="background:rgba(10,8,18,0.7);backdrop-filter:blur(8px)">
+    <div class="glass rounded-3xl p-8 max-w-sm w-full text-center fade-in">
+      <div class="text-5xl mb-4">👋</div>
+      <h2 class="serif text-2xl font-semibold mb-2 grad-text">Welcome to Momentum</h2>
+      <p class="text-sm mb-6" style="color:var(--muted)">Set goals at night, crush them by morning. Log in with your username, or sign up to create a new profile - everyone gets their own.</p>
+
+      <!-- Existing profiles on this machine -->
+      <template x-if="users.length > 0">
+        <div class="mb-4 text-left">
+          <div class="text-xs mb-1.5" style="color:var(--muted)">Continue as</div>
+          <div class="flex flex-wrap gap-1.5">
+            <template x-for="u in users" :key="u">
+              <button @click="login(u)" class="text-xs font-semibold px-3 py-1.5 rounded-full pill-accent hover:brightness-125 transition-all" x-text="u"></button>
+            </template>
+          </div>
+        </div>
+      </template>
+
+      <input
+        type="text"
+        x-model="nameInput"
+        @keydown.enter="login()"
+        @input="loginError = ''"
+        placeholder="username"
+        autocomplete="off"
+        spellcheck="false"
+        class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-center text-white placeholder-slate-600 focus:outline-none focus:border-purple-400 lowercase"
+      />
+      <p x-show="loginError" x-cloak class="text-xs text-rose-400 mt-2" x-text="loginError"></p>
+      <p x-show="!loginError" class="text-xs mt-2" style="color:var(--muted)">Letters, numbers, - and _ only.</p>
+      <div class="grid grid-cols-2 gap-2 mt-4">
+        <button @click="signup()" class="w-full font-semibold py-3 rounded-xl border border-white/10 bg-white/5 text-white hover:bg-white/10 transition-all">Sign up</button>
+        <button @click="login()" class="grad-btn w-full text-white font-semibold py-3 rounded-xl">Log in →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <div class="sticky top-0 z-40 glass border-b border-white/5">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl grad-btn flex items-center justify-center text-white font-bold shadow-lg">M</div>
+        <span class="font-bold text-white tracking-tight">Momentum</span>
+      </div>
+      <div class="flex items-center gap-2 sm:gap-3">
+        <div class="hidden sm:flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full pill-accent">
+          <span>🔥</span><span x-text="metrics().streak + ' day streak'"></span>
+        </div>
+        <!-- Save status -->
+        <span x-show="saveStatus === 'saving'" x-cloak class="text-xs" style="color:var(--muted)">Saving…</span>
+        <span x-show="saveStatus === 'saved'" x-cloak class="text-xs" style="color:var(--good)">Saved ✓</span>
+        <span x-show="saveStatus === 'error'" x-cloak @click="flushNow()" class="text-xs text-rose-400 cursor-pointer" title="Retry save">Save failed - retry</span>
+
+        <input type="file" x-ref="importFile" accept="application/json,.json" class="hidden" @change="importData($event)" />
+        <button @click="exportData()" class="glass glass-hover w-8 h-8 rounded-full flex items-center justify-center text-slate-300 text-sm" title="Export your data (JSON)">⬇</button>
+        <button @click="$refs.importFile.click()" class="glass glass-hover w-8 h-8 rounded-full flex items-center justify-center text-slate-300 text-sm" title="Import data from JSON">⬆</button>
+        <button @click="logout()" class="w-8 h-8 rounded-full grad-btn flex items-center justify-center text-white text-sm font-bold" x-text="userInitial()" title="Switch user"></button>
+        <button @click="quitApp()" class="glass glass-hover w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-rose-400 text-sm" title="Quit Momentum (stops the app)">⏻</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-5xl mx-auto px-4 py-6">
+
+    <!-- Greeting hero -->
+    <div class="mb-6 fade-in">
+      <div class="text-sm mb-1" style="color:var(--muted)" x-text="dateLabel()"></div>
+      <h1 class="serif text-3xl sm:text-4xl font-semibold leading-tight">
+        <span x-text="greeting() + ', '"></span><span class="grad-text" x-text="displayName()"></span>
+      </h1>
+      <p class="mt-2 text-sm quote-fade" style="color:var(--muted)" x-text="quote"></p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="glass rounded-2xl p-1.5 flex gap-1 text-sm font-semibold mb-6">
+      <template x-for="tab in tabs" :key="tab.id">
+        <button
+          @click="activeTab = tab.id"
+          :class="activeTab === tab.id ? 'tab-active' : 'text-slate-400 hover:text-white'"
+          class="flex-1 py-2.5 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5"
+        ><span x-text="tab.icon"></span><span class="hidden sm:inline" x-text="tab.label"></span></button>
+      </template>
+    </div>
+
+    <!-- ===== TODAY TAB ===== -->
+    <div x-show="activeTab === 'today'" x-cloak class="fade-in">
+
+      <!-- Date nav -->
+      <div class="flex items-center justify-between mb-5">
+        <button @click="shiftDate(-1)" :disabled="selectedDate <= minDate" :class="selectedDate <= minDate ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''" class="glass glass-hover rounded-xl w-10 h-10 flex items-center justify-center text-slate-300" title="Previous day">←</button>
+        <div class="flex items-center gap-3">
+          <input type="date" x-model="selectedDate" :min="minDate" class="glass rounded-xl px-3 py-2 text-sm text-white bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-purple-400" />
+          <button x-show="selectedDate !== today" @click="selectedDate = today" class="text-xs font-semibold px-3 py-2 rounded-xl pill-accent">Today</button>
+        </div>
+        <button @click="shiftDate(1)" class="glass glass-hover rounded-xl w-10 h-10 flex items-center justify-center text-slate-300" title="Next day">→</button>
+      </div>
+
+      <!-- Day summary with progress ring -->
+      <div class="glass rounded-3xl p-5 mb-6 flex items-center gap-5">
+        <div class="relative flex-shrink-0" style="width:88px;height:88px">
+          <svg width="88" height="88" class="-rotate-90">
+            <circle class="ring-track" cx="44" cy="44" r="38" fill="none" stroke-width="8"/>
+            <circle class="ring-fill" cx="44" cy="44" r="38" fill="none" stroke-width="8"
+              :stroke-dasharray="2 * Math.PI * 38"
+              :stroke-dashoffset="2 * Math.PI * 38 * (1 - dayStats().pct / 100)"/>
+          </svg>
+          <div class="absolute inset-0 flex flex-col items-center justify-center">
+            <span class="text-xl font-bold" x-text="dayStats().pct + '%'"></span>
+          </div>
+        </div>
+        <div class="flex-1 grid grid-cols-3 gap-2 text-center">
+          <div>
+            <div class="text-2xl font-bold text-white" x-text="dayStats().completed + '/' + dayStats().total"></div>
+            <div class="text-xs mt-0.5" style="color:var(--muted)">Goals done</div>
+          </div>
+          <div>
+            <div class="text-2xl font-bold" style="color:var(--accent3)" x-text="dayStats().hours + 'h'"></div>
+            <div class="text-xs mt-0.5" style="color:var(--muted)">Planned</div>
+          </div>
+          <div>
+            <div class="text-2xl font-bold" style="color:var(--good)" x-text="dayStats().doneHours + 'h'"></div>
+            <div class="text-xs mt-0.5" style="color:var(--muted)">Logged</div>
+          </div>
+        </div>
+        <button x-show="selectedDate <= today && dayStats().total > 0" @click="endOfDay()" class="text-xs bg-orange-500/15 text-orange-300 border border-orange-500/25 rounded-xl px-3 py-2.5 hover:bg-orange-500/25 transition-all whitespace-nowrap font-semibold flex-shrink-0">🌙 End Day</button>
+      </div>
+
+      <!-- Future-date hint: habits are seeded on the day itself, not in advance -->
+      <div x-show="selectedDate > today && habitsOnDate(selectedDate).length > 0" class="glass rounded-2xl p-3 mb-3 text-xs flex items-center gap-2" style="color:var(--muted)">
+        <span>🔁</span><span x-text="habitsOnDate(selectedDate).length + ' habit' + (habitsOnDate(selectedDate).length > 1 ? 's' : '') + ' scheduled for this day will appear automatically when it arrives.'"></span>
+      </div>
+
+      <!-- Goals list -->
+      <div class="space-y-3 mb-6">
+        <template x-if="goalsForDate(selectedDate).length === 0">
+          <div class="glass rounded-3xl p-10 text-center">
+            <div class="text-5xl mb-3" x-text="isEvening() ? '🌙' : '☀️'"></div>
+            <div class="serif text-lg text-white mb-1" x-text="isEvening() ? 'Plan tomorrow\'s wins' : 'A fresh canvas awaits'"></div>
+            <div class="text-sm" style="color:var(--muted)">Add your first goal below and build momentum.</div>
+          </div>
+        </template>
+
+        <template x-for="(goal, gi) in goalsForDate(selectedDate)" :key="goal.id">
+          <div class="glass goal-card rounded-2xl p-4" :class="goal.completed ? 'completed-goal' : ''">
+            <div class="flex items-start gap-3">
+              <button
+                @click="toggleGoal(selectedDate, gi, $event)"
+                class="chk-btn mt-0.5 w-6 h-6 rounded-full border-2 flex-shrink-0 flex items-center justify-center"
+                :class="goal.completed ? 'grad-btn border-transparent pop' : 'border-white/25 hover:border-purple-400'"
+              >
+                <svg x-show="goal.completed" class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+              </button>
+
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span x-show="goal.recurringId" class="text-xs px-2 py-0.5 rounded-full" style="background:rgba(52,211,153,0.15);border:1px solid rgba(52,211,153,0.3);color:#34d399" title="Daily habit">🔁 habit</span>
+                  <span class="font-semibold text-white topic-text" x-text="goal.topic"></span>
+                  <span class="text-xs px-2 py-0.5 rounded-full pill-accent" x-text="goal.hours + 'h planned'"></span>
+                  <span x-show="goal.subtasks && goal.subtasks.length > 0" class="text-xs" style="color:var(--muted)" x-text="subtaskProgress(goal)"></span>
+                </div>
+
+                <!-- Subtasks -->
+                <div x-show="goal.subtasks && goal.subtasks.length > 0" class="mt-2.5 space-y-1.5">
+                  <template x-for="(sub, si) in goal.subtasks" :key="sub.id">
+                    <label class="flex items-center gap-2.5 cursor-pointer group">
+                      <span class="w-4 h-4 rounded-md border flex items-center justify-center flex-shrink-0 transition-all" :class="sub.completed ? 'grad-btn border-transparent' : 'border-white/25 group-hover:border-purple-400'">
+                        <svg x-show="sub.completed" class="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="4"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                      </span>
+                      <input type="checkbox" class="hidden" :checked="sub.completed" @change="toggleSubtask(selectedDate, gi, si)" />
+                      <span class="text-sm transition-colors" style="color:var(--muted)" :class="sub.completed ? 'line-through opacity-50' : 'group-hover:text-white'" x-text="sub.text"></span>
+                    </label>
+                  </template>
+                </div>
+
+                <!-- Add subtask inline -->
+                <div x-show="goal.addingSubtask" class="mt-2.5 flex gap-2">
+                  <input type="text" :id="`sub-input-${goal.id}`" @keydown.enter="commitSubtask(selectedDate, gi)" @keydown.escape="goal.addingSubtask = false" placeholder="New subtask..." class="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-400" />
+                  <button @click="commitSubtask(selectedDate, gi)" class="text-xs font-semibold px-2 rounded-lg pill-accent">Add</button>
+                </div>
+
+                <!-- Log hours (when completed) -->
+                <div x-show="goal.completed" class="mt-2.5 flex items-center gap-2">
+                  <span class="text-xs" style="color:var(--muted)">Hours actually spent:</span>
+                  <input type="number" min="0" step="0.25" :value="goal.loggedHours ?? goal.hours" @change="logHours(selectedDate, gi, $event.target.value)" class="w-16 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-purple-400" />
+                  <span class="text-xs" style="color:var(--muted)">h</span>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-0.5 flex-shrink-0">
+                <button @click="goal.addingSubtask = true; $nextTick(() => document.getElementById(`sub-input-${goal.id}`)?.focus())" class="text-slate-500 hover:text-purple-400 w-7 h-7 rounded-lg transition-colors flex items-center justify-center" title="Add subtask">＋</button>
+                <button x-show="!goal.recurringId" @click="moveToBacklog(selectedDate, gi)" class="text-slate-500 hover:text-orange-400 w-7 h-7 rounded-lg transition-colors flex items-center justify-center" title="Move to backlog">↩</button>
+                <button @click="deleteGoal(selectedDate, gi)" class="text-slate-500 hover:text-red-400 w-7 h-7 rounded-lg transition-colors flex items-center justify-center" title="Delete">✕</button>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Add goal form -->
+      <div class="glass rounded-2xl p-4" x-data="{ open: false }">
+        <button @click="open = !open" class="w-full text-left flex items-center gap-2.5 font-semibold transition-colors" :class="open ? 'text-white' : 'text-slate-400 hover:text-white'">
+          <span class="w-7 h-7 rounded-lg grad-btn flex items-center justify-center text-white text-lg leading-none">+</span>
+          <span x-text="isEvening() ? 'Add a goal for tomorrow' : 'Add a goal'"></span>
+        </button>
+        <div x-show="open" x-cloak class="mt-4 space-y-3 fade-in">
+          <input type="text" x-model="newGoal.topic" @keydown.enter="if(newGoal.topic.trim()){addGoal();}" placeholder="What do you want to work on?" class="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-400" />
+          <div class="flex gap-3 items-end">
+            <div>
+              <label class="text-xs mb-1 block" style="color:var(--muted)">Hours planned</label>
+              <input type="number" x-model.number="newGoal.hours" min="0.25" max="24" step="0.25" placeholder="2" class="w-28 bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-400" />
+            </div>
+          </div>
+          <div>
+            <label class="text-xs mb-1 block" style="color:var(--muted)">Subtasks (one per line)</label>
+            <textarea x-model="newGoal.subtasksText" placeholder="Break it down into steps..." rows="3" class="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-400 resize-none"></textarea>
+          </div>
+          <div class="flex gap-2 justify-end">
+            <button @click="open = false; resetNewGoal()" class="text-sm text-slate-500 hover:text-white px-3 py-2 rounded-xl transition-colors">Cancel</button>
+            <button @click="addGoal(); open = goalsForDate(selectedDate).length === 0" class="grad-btn text-sm text-white px-5 py-2 rounded-xl font-semibold">Add Goal</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== BACKLOG TAB ===== -->
+    <div x-show="activeTab === 'backlog'" x-cloak class="fade-in">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <h2 class="serif text-2xl font-semibold text-white">Backlog</h2>
+          <p class="text-sm" style="color:var(--muted)">Unfinished goals, most recent first. Reschedule when you're ready.</p>
+        </div>
+        <span class="text-xs px-3 py-1.5 rounded-full pill-accent font-semibold" x-text="backlog.length + ' waiting'"></span>
+      </div>
+
+      <template x-if="backlog.length === 0">
+        <div class="glass rounded-3xl p-10 text-center">
+          <div class="text-5xl mb-3">🎉</div>
+          <div class="serif text-lg text-white mb-1">Nothing's slipping through</div>
+          <div class="text-sm" style="color:var(--muted)">Your backlog is empty. Keep the momentum going!</div>
+        </div>
+      </template>
+
+      <div class="space-y-3">
+        <template x-for="(item, idx) in backlog" :key="item.id">
+          <div class="glass goal-card rounded-2xl p-4 fade-in">
+            <div class="flex items-start gap-3">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-semibold text-white" x-text="item.topic"></span>
+                  <span class="text-xs px-2 py-0.5 rounded-full pill-accent" x-text="item.hours + 'h'"></span>
+                  <span class="text-xs px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-300" x-text="ageLabel(item.backlognedAt)"></span>
+                </div>
+                <div class="text-xs mt-1" style="color:var(--muted)" x-text="'Originally: ' + formatDisplayDate(item.originalDate)"></div>
+                <div x-show="item.subtasks && item.subtasks.length > 0" class="mt-2 flex flex-wrap gap-1.5">
+                  <template x-for="sub in item.subtasks" :key="sub.id">
+                    <span class="text-xs px-1.5 py-0.5 rounded" :class="sub.completed ? 'bg-emerald-500/10 text-emerald-400 line-through' : 'bg-white/5 text-slate-500'" x-text="sub.text"></span>
+                  </template>
+                </div>
+              </div>
+              <div class="flex flex-col gap-1.5 flex-shrink-0 items-end">
+                <button @click="scheduleFromBacklog(idx, today)" class="grad-btn text-xs text-white font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap">→ Today</button>
+                <div class="flex items-center gap-1">
+                  <input type="date" :id="`bl-date-${idx}`" :min="today" :value="today" class="bg-white/5 border border-white/10 rounded-lg px-1.5 py-1 text-xs text-slate-400 focus:outline-none focus:border-purple-400" />
+                  <button @click="scheduleFromBacklog(idx, document.getElementById(`bl-date-${idx}`).value)" class="text-xs text-slate-400 hover:text-white px-1">go</button>
+                </div>
+                <button @click="deleteBacklogItem(idx)" class="text-xs text-slate-500 hover:text-red-400">remove</button>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- ===== HABITS TAB ===== -->
+    <div x-show="activeTab === 'habits'" x-cloak class="fade-in">
+      <div class="flex items-start justify-between gap-3 mb-5">
+        <div>
+          <h2 class="serif text-2xl font-semibold text-white">Habits</h2>
+          <p class="text-sm" style="color:var(--muted)">Recurring routines like yoga, walking, or reading. Choose which days each one repeats - they appear automatically on those days, marked 🔁.</p>
+        </div>
+        <button x-show="!habitFormOpen" @click="openAddHabit()" class="text-sm text-white px-4 py-2 rounded-xl font-semibold whitespace-nowrap flex-shrink-0" style="background:linear-gradient(120deg,#10b981,#34d399)">+ New</button>
+      </div>
+
+      <!-- Add / edit form -->
+      <div x-show="habitFormOpen" x-cloak class="glass rounded-2xl p-4 mb-5 fade-in" style="border-color:rgba(52,211,153,0.35)">
+        <div class="font-semibold text-white mb-3" x-text="editingId ? 'Edit habit' : 'New habit'"></div>
+        <div class="space-y-3">
+          <input type="text" x-model="newHabit.topic" @keydown.enter="submitHabit()" placeholder="e.g. Yoga, Morning walk, Read 20 pages" class="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-emerald-400" />
+          <div>
+            <label class="text-xs mb-1 block" style="color:var(--muted)">Time per day (hours)</label>
+            <input type="number" x-model.number="newHabit.hours" min="0.25" max="24" step="0.25" placeholder="0.5" class="w-28 bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-emerald-400" />
+          </div>
+          <!-- Weekday scheduler -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5 flex-wrap gap-2">
+              <label class="text-xs" style="color:var(--muted)">Repeat on</label>
+              <div class="flex gap-1.5">
+                <button type="button" @click="setHabitDays('all')" class="text-xs px-2 py-0.5 rounded-full glass glass-hover text-slate-300">Every day</button>
+                <button type="button" @click="setHabitDays('weekdays')" class="text-xs px-2 py-0.5 rounded-full glass glass-hover text-slate-300">Weekdays</button>
+                <button type="button" @click="setHabitDays('weekends')" class="text-xs px-2 py-0.5 rounded-full glass glass-hover text-slate-300">Weekends</button>
+              </div>
+            </div>
+            <div class="flex gap-1.5">
+              <template x-for="(d, i) in weekdayShort" :key="i">
+                <button type="button" @click="toggleHabitDay(i)"
+                  class="flex-1 py-2 rounded-lg text-xs font-semibold transition-all"
+                  :class="newHabit.days.includes(i) ? 'text-white' : 'text-slate-500 glass'"
+                  :style="newHabit.days.includes(i) ? 'background:linear-gradient(120deg,#10b981,#34d399)' : ''"
+                  x-text="d"></button>
+              </template>
+            </div>
+            <div x-show="newHabit.days.length === 0" class="text-xs text-rose-400 mt-1.5">Pick at least one day.</div>
+          </div>
+          <div>
+            <label class="text-xs mb-1 block" style="color:var(--muted)">Subtasks (optional, one per line)</label>
+            <textarea x-model="newHabit.subtasksText" placeholder="Warm up&#10;20 min flow&#10;Cool down" rows="3" class="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-emerald-400 resize-none"></textarea>
+          </div>
+          <div class="flex gap-2 justify-end">
+            <button @click="closeHabitForm()" class="text-sm text-slate-500 hover:text-white px-3 py-2 rounded-xl transition-colors">Cancel</button>
+            <button @click="submitHabit()" :disabled="!newHabit.topic.trim() || newHabit.days.length === 0" :class="(!newHabit.topic.trim() || newHabit.days.length === 0) ? 'opacity-40 cursor-not-allowed' : ''" class="text-sm text-white px-5 py-2 rounded-xl font-semibold" style="background:linear-gradient(120deg,#10b981,#34d399)" x-text="editingId ? 'Save changes' : 'Add habit'"></button>
+          </div>
+        </div>
+      </div>
+
+      <template x-if="recurring.length === 0 && !habitFormOpen">
+        <div class="glass rounded-3xl p-10 text-center">
+          <div class="text-5xl mb-3">🧘</div>
+          <div class="serif text-lg text-white mb-1">Build your rituals</div>
+          <div class="text-sm" style="color:var(--muted)">Routines you want to repeat - every day or only on certain days. Tap "+ New" to add your first.</div>
+        </div>
+      </template>
+
+      <div class="space-y-3">
+        <template x-for="(h, hi) in recurring" :key="h.id">
+          <div class="glass goal-card rounded-2xl p-4 fade-in">
+            <div class="flex items-start gap-3">
+              <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-lg" style="background:rgba(52,211,153,0.15)">🔁</div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="font-semibold text-white" x-text="h.topic"></span>
+                  <span class="text-xs px-2 py-0.5 rounded-full pill-accent" x-text="h.hours + 'h/day'"></span>
+                  <span class="text-xs px-2 py-0.5 rounded-full" style="background:rgba(52,211,153,0.15);color:#34d399" x-text="scheduleLabel(h.days)"></span>
+                </div>
+                <div x-show="h.subtasks && h.subtasks.length > 0" class="mt-2 flex flex-wrap gap-1.5">
+                  <template x-for="(sub, si) in h.subtasks" :key="si">
+                    <span class="text-xs px-1.5 py-0.5 rounded bg-white/5 text-slate-400" x-text="sub.text"></span>
+                  </template>
+                </div>
+                <div class="text-xs mt-1.5" style="color:var(--muted)" x-text="'Since ' + formatDisplayDate(h.startDate)"></div>
+              </div>
+              <div class="flex items-center gap-0.5 flex-shrink-0">
+                <button @click="openEditHabit(h)" class="text-slate-500 hover:text-emerald-400 w-7 h-7 rounded-lg transition-colors flex items-center justify-center" title="Edit habit">✎</button>
+                <button @click="deleteHabit(hi)" class="text-slate-500 hover:text-red-400 w-7 h-7 rounded-lg transition-colors flex items-center justify-center" title="Remove habit">✕</button>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- ===== HISTORY TAB ===== -->
+    <div x-show="activeTab === 'history'" x-cloak class="fade-in">
+      <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div>
+          <h2 class="serif text-2xl font-semibold text-white">Your journey</h2>
+          <p class="text-sm" style="color:var(--muted)">Every day you showed up.</p>
+        </div>
+        <div class="flex gap-1.5">
+          <template x-for="f in [['all','All'],['complete','Done'],['incomplete','Missed']]" :key="f[0]">
+            <button @click="historyFilter = f[0]" :class="historyFilter === f[0] ? 'tab-active' : 'glass text-slate-400 hover:text-white'" class="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all" x-text="f[1]"></button>
+          </template>
+        </div>
+      </div>
+
+      <template x-if="historyDates().length === 0">
+        <div class="glass rounded-3xl p-10 text-center">
+          <div class="text-5xl mb-3">📖</div>
+          <div class="serif text-lg text-white mb-1">Your story starts today</div>
+          <div class="text-sm" style="color:var(--muted)">Complete some goals and watch your history grow.</div>
+        </div>
+      </template>
+
+      <div class="space-y-3">
+        <template x-for="date in historyDates()" :key="date">
+          <div class="glass rounded-2xl overflow-hidden">
+            <div class="px-4 py-3.5 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-colors" @click="toggleHistoryDate(date)">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 rounded-xl flex flex-col items-center justify-center flex-shrink-0" :class="historyDayPct(date) === 100 ? 'bg-emerald-500/20' : historyDayPct(date) >= 50 ? 'bg-amber-500/20' : 'bg-rose-500/20'">
+                  <span class="text-sm font-bold" :class="historyDayPct(date) === 100 ? 'text-emerald-400' : historyDayPct(date) >= 50 ? 'text-amber-400' : 'text-rose-400'" x-text="historyDayPct(date) + '%'"></span>
+                </div>
+                <div class="min-w-0">
+                  <div class="font-semibold text-white truncate" x-text="formatDisplayDate(date)"></div>
+                  <div class="text-xs" style="color:var(--muted)" x-text="historyDaySummary(date)"></div>
+                </div>
+              </div>
+              <span class="text-slate-500 text-xs flex-shrink-0" x-text="expandedHistoryDates.includes(date) ? '▲' : '▼'"></span>
+            </div>
+            <div x-show="expandedHistoryDates.includes(date)" class="border-t border-white/5 px-4 py-3 space-y-2">
+              <template x-for="goal in filteredHistoryGoals(date)" :key="goal.id">
+                <div class="flex items-start gap-3 py-1">
+                  <div class="mt-0.5 w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center" :class="goal.completed ? 'grad-btn' : 'bg-white/10'">
+                    <svg x-show="goal.completed" class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm text-white" :class="goal.completed ? 'line-through opacity-60' : ''" x-text="goal.topic"></span>
+                      <span class="text-xs" style="color:var(--muted)" x-text="(goal.loggedHours ?? goal.hours) + 'h'"></span>
+                    </div>
+                    <div x-show="goal.subtasks && goal.subtasks.length > 0" class="mt-1 flex flex-wrap gap-1.5">
+                      <template x-for="sub in goal.subtasks" :key="sub.id">
+                        <span class="text-xs px-1.5 py-0.5 rounded" :class="sub.completed ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/5 text-slate-500'" x-text="sub.text"></span>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- ===== METRICS TAB ===== -->
+    <div x-show="activeTab === 'metrics'" x-cloak class="fade-in">
+      <div class="mb-5">
+        <h2 class="serif text-2xl font-semibold text-white">Your momentum</h2>
+        <p class="text-sm" style="color:var(--muted)">The proof you're moving forward.</p>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+        <div class="glass rounded-2xl p-4 text-center">
+          <div class="text-3xl font-bold" style="color:var(--accent3)"><span x-text="metrics().streak"></span> 🔥</div>
+          <div class="text-xs mt-1" style="color:var(--muted)">Day streak</div>
+        </div>
+        <div class="glass rounded-2xl p-4 text-center">
+          <div class="text-3xl font-bold grad-text" x-text="metrics().avgWeek + '%'"></div>
+          <div class="text-xs mt-1" style="color:var(--muted)">7-day completion</div>
+        </div>
+        <div class="glass rounded-2xl p-4 text-center">
+          <div class="text-3xl font-bold text-white" x-text="metrics().totalHours + 'h'"></div>
+          <div class="text-xs mt-1" style="color:var(--muted)">Logged (7 days)</div>
+        </div>
+        <div class="glass rounded-2xl p-4 text-center">
+          <div class="text-3xl font-bold text-white" x-text="metrics().totalGoals"></div>
+          <div class="text-xs mt-1" style="color:var(--muted)">Goals (7 days)</div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="glass rounded-2xl p-5">
+          <div class="text-sm font-semibold text-white mb-4">Last 7 days · completed vs planned</div>
+          <canvas id="dailyChart" height="200"></canvas>
+        </div>
+        <div class="glass rounded-2xl p-5">
+          <div class="text-sm font-semibold text-white mb-4">Last 4 weeks · completion rate</div>
+          <canvas id="weeklyChart" height="200"></canvas>
+        </div>
+      </div>
+
+      <div class="glass rounded-2xl p-5 mt-4">
+        <div class="text-sm font-semibold text-white mb-4">Hours logged per day</div>
+        <canvas id="hoursChart" height="120"></canvas>
+      </div>
+    </div>
+
+  </div>
+  </div>
+
+  <script>
+  function app() {
+    return {
+      activeTab: 'today',
+      tabs: [
+        { id: 'today', label: 'Today', icon: '☀️' },
+        { id: 'backlog', label: 'Backlog', icon: '📥' },
+        { id: 'habits', label: 'Habits', icon: '🔁' },
+        { id: 'history', label: 'History', icon: '📖' },
+        { id: 'metrics', label: 'Momentum', icon: '📈' },
+      ],
+      today: '',
+      minDate: '',
+      selectedDate: '',
+      install: '',
+      goals: {},
+      backlog: [],
+      recurring: [],
+      seeded: {},
+      newGoal: { topic: '', hours: 1, subtasksText: '' },
+      newHabit: { topic: '', hours: 0.5, subtasksText: '', days: [0,1,2,3,4,5,6] },
+      habitFormOpen: false,
+      editingId: null,
+      weekdayNames: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
+      weekdayShort: ['Su','Mo','Tu','We','Th','Fr','Sa'],
+      historyFilter: 'all',
+      expandedHistoryDates: [],
+      userName: '',
+      nameInput: '',
+      loggedIn: false,
+      users: [],
+      loginError: '',
+      saveStatus: 'idle',   // idle | saving | saved | error
+      _saveTimer: null,
+      quote: '',
+      _charts: {},
+
+      quotes: [
+        "Small steps every day add up to big results.",
+        "Discipline is choosing between what you want now and what you want most.",
+        "You don't have to be extreme, just consistent.",
+        "The secret of getting ahead is getting started.",
+        "A goal without a plan is just a wish.",
+        "Done is better than perfect.",
+        "Success is the sum of small efforts repeated day in and day out.",
+        "What you do today can improve all your tomorrows.",
+        "Focus on being productive instead of busy.",
+        "The future depends on what you do today.",
+      ],
+
+      async init() {
+        // Guard: opening index.html directly (file://) renders the UI but has no
+        // server behind it, so nothing can load or save. Point at the real app.
+        if (location.protocol === 'file:') {
+          document.body.innerHTML =
+            '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#14121f;color:#ece9f5;font-family:system-ui,sans-serif;text-align:center;padding:2rem">' +
+            '<div style="max-width:26rem"><div style="font-size:3rem;margin-bottom:0.75rem">🚪</div>' +
+            '<div style="font-size:1.15rem;font-weight:600">This file isn\'t the app</div>' +
+            '<div style="color:#a49fc0;font-size:0.9rem;margin-top:0.5rem;line-height:1.5">You opened <b>index.html</b> directly, so there is no server to load or save your data.<br><br>' +
+            'Start Momentum by double-clicking <b>Momentum.pyw</b>, or if it\'s already running, open:</div>' +
+            '<a href="http://localhost:8899" style="display:inline-block;margin-top:1rem;padding:0.7rem 1.4rem;border-radius:0.8rem;background:linear-gradient(120deg,#8b5cf6,#ec4899);color:#fff;font-weight:600;text-decoration:none">Open Momentum →</a></div></div>';
+          return;
+        }
+        this.today = this.dateStr(new Date());
+        this.selectedDate = this.today;
+        this.pickQuote();
+        await this.fetchUsers();
+        // Watchers are registered once here (not on login) so logging out and back
+        // in never stacks duplicate watchers. They no-op until a user is loaded.
+        this.$watch('selectedDate', (d) => this.ensureRecurring(d));
+        this.$watch('activeTab', (tab) => {
+          if (tab === 'metrics' && this.loggedIn) this.$nextTick(() => this.renderCharts());
+        });
+        // Best-effort flush if the tab is closed with an unsaved change pending.
+        window.addEventListener('beforeunload', () => this.beacon());
+      },
+
+      pickQuote() {
+        const day = new Date().getDate();
+        this.quote = this.quotes[day % this.quotes.length];
+      },
+
+      // ---- Users / auth ----
+      normalizeUsername(name) {
+        if (typeof name !== 'string') return '';
+        const n = name.trim().toLowerCase();
+        return /^[a-z0-9][a-z0-9_-]{0,31}$/.test(n) ? n : '';
+      },
+      async fetchUsers() {
+        try {
+          const res = await fetch('/api/users');
+          this.users = res.ok ? await res.json() : [];
+        } catch (e) { this.users = []; }
+      },
+      // Log in to an existing profile. New profiles are created via signup().
+      async login(name) {
+        const clean = this.normalizeUsername(name ?? this.nameInput);
+        if (!clean) { this.loginError = 'Use letters, numbers, - or _ (max 32 chars).'; return; }
+        try {
+          const res = await fetch('/api/load?user=' + encodeURIComponent(clean));
+          if (res.ok) {
+            const d = await res.json();
+            this.goals = d.goals || {};
+            this.backlog = d.backlog || [];
+            this.recurring = d.recurring || [];
+            this.seeded = d.seeded || {};
+            this.install = d.install || this.today;
+          } else if (res.status === 404) {
+            this.loginError = `No profile named "${clean}" yet - click Sign up to create it.`;
+            return;
+          } else {
+            this.loginError = 'Could not load that profile (it may be corrupt).';
+            return;
+          }
+        } catch (e) {
+          this.loginError = 'Cannot reach Momentum\'s server. Start it by double-clicking Momentum.pyw, then open http://localhost:8899.';
+          return;
+        }
+        await this._enterProfile(clean);
+      },
+      // Create a brand-new profile. Refuses usernames that already exist so
+      // one person can't silently open (and overwrite) someone else's data.
+      async signup(name) {
+        const clean = this.normalizeUsername(name ?? this.nameInput);
+        if (!clean) { this.loginError = 'Use letters, numbers, - or _ (max 32 chars).'; return; }
+        try {
+          // Ask the server, not this.users, so a stale list can't allow a clash.
+          const res = await fetch('/api/load?user=' + encodeURIComponent(clean));
+          if (res.ok) {
+            this.loginError = `"${clean}" already exists - use Log in instead.`;
+            return;
+          }
+          if (res.status !== 404) {
+            this.loginError = 'Could not check that username. Try again.';
+            return;
+          }
+        } catch (e) {
+          this.loginError = 'Cannot reach Momentum\'s server. Start it by double-clicking Momentum.pyw, then open http://localhost:8899.';
+          return;
+        }
+        // Brand-new user: empty profile installed today.
+        this.goals = {}; this.backlog = []; this.recurring = []; this.seeded = {};
+        this.install = this.today;
+        await this._enterProfile(clean);
+      },
+      // Shared tail of login/signup: activate the loaded state and persist it.
+      async _enterProfile(clean) {
+        this.userName = clean;
+        this.loginError = '';
+        this.selectedDate = this.today;
+        const dataDates = Object.keys(this.goals).filter(d => (this.goals[d] || []).length > 0);
+        this.minDate = dataDates.length ? [this.install, ...dataDates].sort()[0] : this.install;
+        this.loggedIn = true;
+        this.ensureRecurring(this.today);
+        await this.flushNow();   // persist immediately so a new profile's file exists
+        await this.fetchUsers();
+      },
+      logout() {
+        this.flushNow();          // best-effort save of any pending change
+        this.loggedIn = false;
+        this.nameInput = '';
+        this.loginError = '';
+        this.activeTab = 'today';
+        this.fetchUsers();
+      },
+      // Stops the hidden server started by Momentum.pyw. Data is flushed first.
+      async quitApp() {
+        if (!confirm('Quit Momentum? Your data is saved and the app will stop.')) return;
+        await this.flushNow();
+        try { await fetch('/api/quit', { method: 'POST' }); } catch (e) {}
+        document.body.innerHTML =
+          '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#14121f;color:#ece9f5;font-family:system-ui,sans-serif;text-align:center;padding:2rem">' +
+          '<div><div style="font-size:3rem;margin-bottom:0.75rem">👋</div>' +
+          '<div style="font-size:1.15rem;font-weight:600">Momentum is closed</div>' +
+          '<div style="color:#a49fc0;font-size:0.9rem;margin-top:0.4rem">Your data is saved. You can close this tab.<br>Double-click Momentum.pyw to start it again.</div></div></div>';
+      },
+      displayName() {
+        const n = this.userName || '';
+        return n ? n.charAt(0).toUpperCase() + n.slice(1) : '';
+      },
+      userInitial() {
+        return (this.userName || '?').trim().charAt(0).toUpperCase();
+      },
+
+      // ---- Greeting ----
+      hourNow() { return new Date().getHours(); },
+      isEvening() { const h = this.hourNow(); return h >= 20 || h < 4; },
+      greeting() {
+        const h = this.hourNow();
+        if (h < 5) return "Burning the midnight oil";
+        if (h < 12) return "Good morning";
+        if (h < 17) return "Good afternoon";
+        if (h < 21) return "Good evening";
+        return "Winding down";
+      },
+      dateLabel() {
+        const d = new Date();
+        return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+      },
+
+      // ---- Persistence (local server -> userData/<username>.json) ----
+      // Snapshot of everything that belongs to the current user's file.
+      snapshot() {
+        return {
+          username: this.userName,
+          install: this.install,
+          updatedAt: new Date().toISOString(),
+          goals: this.goals,
+          backlog: this.backlog,
+          recurring: this.recurring,
+          seeded: this.seeded,
+        };
+      },
+      // Debounced save: many rapid mutations (checking subtasks, etc.) collapse
+      // into a single request 400ms after the last change.
+      save() {
+        if (!this.loggedIn) return;
+        clearTimeout(this._saveTimer);
+        this._saveTimer = setTimeout(() => this.flushNow(), 400);
+      },
+      async flushNow() {
+        if (!this.loggedIn || !this.userName) return;
+        clearTimeout(this._saveTimer);
+        this.saveStatus = 'saving';
+        try {
+          const res = await fetch('/api/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: this.userName, data: this.snapshot() }),
+          });
+          if (!res.ok) throw new Error('save failed');
+          this.saveStatus = 'saved';
+          setTimeout(() => { if (this.saveStatus === 'saved') this.saveStatus = 'idle'; }, 1500);
+        } catch (e) {
+          this.saveStatus = 'error';   // surfaced in header; click to retry
+        }
+      },
+      // Fire-and-forget save on tab close (fetch may be cancelled; beacon isn't).
+      beacon() {
+        if (!this.loggedIn || !this.userName) return;
+        const body = JSON.stringify({ username: this.userName, data: this.snapshot() });
+        navigator.sendBeacon('/api/save', new Blob([body], { type: 'application/json' }));
+      },
+
+      // ---- Import / Export (JSON) ----
+      exportData() {
+        const blob = new Blob([JSON.stringify(this.snapshot(), null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `momentum-${this.userName}-${this.today}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      },
+      async importData(ev) {
+        const file = ev.target.files && ev.target.files[0];
+        if (!file) return;
+        try {
+          const d = JSON.parse(await file.text());
+          if (typeof d !== 'object' || d === null) throw new Error('bad shape');
+          if (!confirm(`Import will replace ${this.displayName()}'s current data with this file. Continue?`)) return;
+          this.goals = d.goals || {};
+          this.backlog = d.backlog || [];
+          this.recurring = d.recurring || [];
+          this.seeded = d.seeded || {};
+          if (d.install) this.install = d.install;
+          this.selectedDate = this.today;
+          const dataDates = Object.keys(this.goals).filter(x => (this.goals[x] || []).length > 0);
+          this.minDate = dataDates.length ? [this.install, ...dataDates].sort()[0] : this.install;
+          this.ensureRecurring(this.today);
+          await this.flushNow();
+          if (this.activeTab === 'metrics') this.$nextTick(() => this.renderCharts());
+          alert('Import complete.');
+        } catch (e) {
+          alert('Import failed: that file is not valid Momentum JSON.');
+        } finally {
+          ev.target.value = '';   // allow re-importing the same file
+        }
+      },
+
+      // ---- Helpers ----
+      dateStr(d) {
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      },
+      shiftDate(delta) {
+        const d = new Date(this.selectedDate + 'T00:00:00');
+        d.setDate(d.getDate() + delta);
+        const ns = this.dateStr(d);
+        if (ns < this.minDate) return; // never before install date
+        this.selectedDate = ns;
+        this.onDateChange();
+      },
+      onDateChange() {},
+      formatDisplayDate(dateStr) {
+        if (!dateStr) return '';
+        const d = new Date(dateStr + 'T00:00:00');
+        const s = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        if (dateStr === this.today) return s + ' · Today';
+        return s;
+      },
+      ageLabel(dateStr) {
+        if (!dateStr) return '';
+        const a = new Date(dateStr + 'T00:00:00');
+        const b = new Date(this.today + 'T00:00:00');
+        const days = Math.round((b - a) / 86400000);
+        if (days <= 0) return 'today';
+        if (days === 1) return 'yesterday';
+        if (days < 7) return days + 'd ago';
+        if (days < 30) return Math.floor(days/7) + 'w ago';
+        return Math.floor(days/30) + 'mo ago';
+      },
+      uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); },
+
+      // ---- Goals ----
+      goalsForDate(date) { return this.goals[date] || []; },
+      addGoal() {
+        if (!this.newGoal.topic.trim()) return;
+        const subtasks = this.newGoal.subtasksText.split('\n').map(s => s.trim()).filter(Boolean).map(text => ({ id: this.uid(), text, completed: false }));
+        const goal = {
+          id: this.uid(),
+          topic: this.newGoal.topic.trim(),
+          hours: this.newGoal.hours || 1,
+          loggedHours: null,
+          completed: false,
+          subtasks,
+          createdAt: this.selectedDate,
+          addingSubtask: false,
+        };
+        if (!this.goals[this.selectedDate]) this.goals[this.selectedDate] = [];
+        this.goals[this.selectedDate].push(goal);
+        this.save();
+        this.resetNewGoal();
+      },
+      resetNewGoal() { this.newGoal = { topic: '', hours: 1, subtasksText: '' }; },
+      toggleGoal(date, gi, ev) {
+        const g = this.goals[date][gi];
+        g.completed = !g.completed;
+        if (g.completed) {
+          g.subtasks.forEach(s => s.completed = true);
+          if (ev) this.celebrate(ev);
+        }
+        this.save();
+      },
+      toggleSubtask(date, gi, si) {
+        const goal = this.goals[date][gi];
+        goal.subtasks[si].completed = !goal.subtasks[si].completed;
+        goal.completed = goal.subtasks.every(s => s.completed);
+        this.save();
+      },
+      commitSubtask(date, gi) {
+        const goal = this.goals[date][gi];
+        const inputEl = document.getElementById(`sub-input-${goal.id}`);
+        const text = inputEl ? inputEl.value.trim() : '';
+        if (!text) return;
+        goal.subtasks.push({ id: this.uid(), text, completed: false });
+        if (inputEl) inputEl.value = '';
+        goal.completed = false;
+        this.save();
+      },
+      logHours(date, gi, val) {
+        this.goals[date][gi].loggedHours = parseFloat(val) || 0;
+        this.save();
+      },
+      deleteGoal(date, gi) { this.goals[date].splice(gi, 1); this.save(); },
+      subtaskProgress(goal) {
+        const done = goal.subtasks.filter(s => s.completed).length;
+        return `${done}/${goal.subtasks.length}`;
+      },
+
+      // ---- Celebration ----
+      celebrate(ev) {
+        const colors = ['#a78bfa','#f472b6','#fbbf24','#34d399','#60a5fa'];
+        const rect = ev.currentTarget.getBoundingClientRect();
+        const cx = rect.left + rect.width/2;
+        for (let i = 0; i < 24; i++) {
+          const p = document.createElement('div');
+          p.className = 'confetti-piece';
+          p.style.left = cx + 'px';
+          p.style.background = colors[i % colors.length];
+          p.style.animationDuration = (0.9 + Math.random()*0.7) + 's';
+          const dx = (Math.random()-0.5) * 260;
+          p.style.setProperty('transform', `translateX(${dx}px)`);
+          p.animate([
+            { transform: 'translate(0,0) rotate(0)', opacity: 1 },
+            { transform: `translate(${dx}px, 90vh) rotate(${Math.random()*720}deg)`, opacity: 0 }
+          ], { duration: 900 + Math.random()*700, easing: 'cubic-bezier(0.2,0.6,0.4,1)' });
+          document.body.appendChild(p);
+          setTimeout(() => p.remove(), 1700);
+        }
+      },
+
+      // ---- Backlog ----
+      moveToBacklog(date, gi) {
+        const goal = this.goals[date].splice(gi, 1)[0];
+        goal.originalDate = goal.createdAt || date;
+        goal.backlognedAt = this.today;
+        goal.addingSubtask = false;
+        this.backlog.unshift(goal);
+        this.save();
+      },
+      endOfDay() {
+        const goals = this.goals[this.selectedDate] || [];
+        // Daily habits are never backlogged - a missed habit just stays missed for that day.
+        const toBacklog = goals.filter(g => !g.completed && !g.recurringId);
+        if (toBacklog.length === 0) { alert("Nothing to carry over - habits aside, you're all caught up! 🎉"); return; }
+        if (!confirm(`Move ${toBacklog.length} unfinished goal(s) to your backlog? (Daily habits stay put.)`)) return;
+        this.goals[this.selectedDate] = goals.filter(g => g.completed || g.recurringId);
+        toBacklog.forEach(g => {
+          g.originalDate = g.createdAt || this.selectedDate;
+          g.backlognedAt = this.today;
+          g.addingSubtask = false;
+          this.backlog.unshift(g);
+        });
+        this.save();
+      },
+      scheduleFromBacklog(idx, date) {
+        if (!date) return;
+        const item = this.backlog.splice(idx, 1)[0];
+        item.createdAt = date;
+        item.addingSubtask = false;
+        if (!this.goals[date]) this.goals[date] = [];
+        this.goals[date].push(item);
+        this.save();
+      },
+      deleteBacklogItem(idx) { this.backlog.splice(idx, 1); this.save(); },
+
+      // ---- Recurring habits ----
+      // Habits are templates materialized into each day's goal list on demand. We only ever seed
+      // the *current* day (never the past, never future days on mere navigation), and only habits
+      // whose weekday schedule includes that day. seeded[] remembers what was placed per date so a
+      // deleted instance doesn't reappear.
+      ensureRecurring(date) {
+        if (!date || date !== this.today) return;
+        const dow = new Date(date + 'T00:00:00').getDay();
+        if (!this.seeded[date]) this.seeded[date] = [];
+        let changed = false;
+        for (const r of this.recurring) {
+          if (date < (r.startDate || this.today)) continue;
+          if (!(r.days || [0,1,2,3,4,5,6]).includes(dow)) continue; // not scheduled this weekday
+          if (this.seeded[date].includes(r.id)) continue;
+          const exists = (this.goals[date] || []).some(g => g.recurringId === r.id);
+          if (!exists) {
+            if (!this.goals[date]) this.goals[date] = [];
+            this.goals[date].push(this.instantiateHabit(r, date));
+          }
+          this.seeded[date].push(r.id);
+          changed = true;
+        }
+        if (changed) this.save();
+      },
+      instantiateHabit(r, date) {
+        return {
+          id: this.uid(),
+          topic: r.topic,
+          hours: r.hours || 0.5,
+          loggedHours: null,
+          completed: false,
+          subtasks: (r.subtasks || []).map(s => ({ id: this.uid(), text: s.text, completed: false })),
+          createdAt: date,
+          addingSubtask: false,
+          recurringId: r.id,
+        };
+      },
+      // Habits whose weekday schedule includes the given date (used for the future-day hint).
+      habitsOnDate(date) {
+        if (!date) return [];
+        const dow = new Date(date + 'T00:00:00').getDay();
+        return this.recurring.filter(r => (r.days || [0,1,2,3,4,5,6]).includes(dow));
+      },
+      scheduleLabel(days) {
+        const d = (days && days.length) ? days : [0,1,2,3,4,5,6];
+        if (d.length === 7) return 'Every day';
+        if (d.length === 5 && [1,2,3,4,5].every(x => d.includes(x))) return 'Weekdays';
+        if (d.length === 2 && [0,6].every(x => d.includes(x))) return 'Weekends';
+        return d.slice().sort((a,b) => a-b).map(i => this.weekdayNames[i]).join(', ');
+      },
+
+      // ---- Habit form (add + edit) ----
+      openAddHabit() { this.editingId = null; this.resetNewHabit(); this.habitFormOpen = true; },
+      openEditHabit(h) {
+        this.editingId = h.id;
+        this.newHabit = {
+          topic: h.topic,
+          hours: h.hours,
+          subtasksText: (h.subtasks || []).map(s => s.text).join('\n'),
+          days: [...(h.days || [0,1,2,3,4,5,6])],
+        };
+        this.habitFormOpen = true;
+      },
+      closeHabitForm() { this.habitFormOpen = false; this.editingId = null; this.resetNewHabit(); },
+      toggleHabitDay(i) {
+        const arr = this.newHabit.days;
+        const idx = arr.indexOf(i);
+        if (idx === -1) arr.push(i); else arr.splice(idx, 1);
+      },
+      setHabitDays(preset) {
+        if (preset === 'all') this.newHabit.days = [0,1,2,3,4,5,6];
+        else if (preset === 'weekdays') this.newHabit.days = [1,2,3,4,5];
+        else if (preset === 'weekends') this.newHabit.days = [0,6];
+      },
+      submitHabit() {
+        const topic = this.newHabit.topic.trim();
+        if (!topic || this.newHabit.days.length === 0) return;
+        const hours = this.newHabit.hours || 0.5;
+        const subtasks = this.newHabit.subtasksText.split('\n').map(s => s.trim()).filter(Boolean).map(text => ({ text }));
+        const days = [...this.newHabit.days].sort((a,b) => a-b);
+        if (this.editingId) {
+          const h = this.recurring.find(r => r.id === this.editingId);
+          if (h) { h.topic = topic; h.hours = hours; h.subtasks = subtasks; h.days = days; }
+          this.syncHabitToToday(this.editingId, topic, hours, subtasks, days);
+        } else {
+          this.recurring.push({ id: this.uid(), topic, hours, subtasks, startDate: this.today, days });
+        }
+        this.save();
+        this.closeHabitForm();
+        this.ensureRecurring(this.today);
+      },
+      // Reflect a template edit onto today's still-untouched instance so customization takes effect now.
+      syncHabitToToday(id, topic, hours, subtasks, days) {
+        const list = this.goals[this.today] || [];
+        const inst = list.find(g => g.recurringId === id);
+        if (!inst || inst.completed) return; // never rewrite a completed instance
+        const touched = inst.subtasks.some(s => s.completed);
+        const dow = new Date(this.today + 'T00:00:00').getDay();
+        if (!days.includes(dow) && !touched) {
+          // no longer scheduled today -> pull the untouched instance back out
+          list.splice(list.indexOf(inst), 1);
+          if (this.seeded[this.today]) this.seeded[this.today] = this.seeded[this.today].filter(x => x !== id);
+          return;
+        }
+        inst.topic = topic;
+        inst.hours = hours;
+        if (!touched) inst.subtasks = subtasks.map(s => ({ id: this.uid(), text: s.text, completed: false }));
+      },
+      resetNewHabit() { this.newHabit = { topic: '', hours: 0.5, subtasksText: '', days: [0,1,2,3,4,5,6] }; },
+      deleteHabit(idx) {
+        if (!confirm('Stop this habit? Days already logged keep their record.')) return;
+        this.recurring.splice(idx, 1);
+        this.save();
+      },
+
+      // ---- Day stats ----
+      dayStats() {
+        const gs = this.goalsForDate(this.selectedDate);
+        const completed = gs.filter(g => g.completed).length;
+        const total = gs.length;
+        const hours = gs.reduce((s, g) => s + (parseFloat(g.hours) || 0), 0);
+        const doneHours = gs.filter(g => g.completed).reduce((s, g) => s + (parseFloat(g.loggedHours ?? g.hours) || 0), 0);
+        const pct = total === 0 ? 0 : Math.round((completed / total) * 100);
+        return { completed, total, hours: +hours.toFixed(2), doneHours: +doneHours.toFixed(2), pct };
+      },
+
+      // ---- History ----
+      historyDates() {
+        return Object.keys(this.goals).filter(d => (this.goals[d] || []).length > 0 && d <= this.today).sort((a, b) => b.localeCompare(a));
+      },
+      toggleHistoryDate(date) {
+        const idx = this.expandedHistoryDates.indexOf(date);
+        if (idx === -1) this.expandedHistoryDates.push(date);
+        else this.expandedHistoryDates.splice(idx, 1);
+      },
+      historyDayPct(date) {
+        const gs = this.goals[date] || [];
+        if (gs.length === 0) return 0;
+        return Math.round((gs.filter(g => g.completed).length / gs.length) * 100);
+      },
+      historyDaySummary(date) {
+        const gs = this.goals[date] || [];
+        const done = gs.filter(g => g.completed).length;
+        const hrs = gs.reduce((s, g) => s + (parseFloat(g.loggedHours ?? g.hours) || 0), 0);
+        return `${done}/${gs.length} goals · ${+hrs.toFixed(1)}h`;
+      },
+      filteredHistoryGoals(date) {
+        const gs = this.goals[date] || [];
+        if (this.historyFilter === 'complete') return gs.filter(g => g.completed);
+        if (this.historyFilter === 'incomplete') return gs.filter(g => !g.completed);
+        return gs;
+      },
+
+      // ---- Metrics ----
+      getLast7Days() {
+        return Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(this.today + 'T00:00:00');
+          d.setDate(d.getDate() - (6 - i));
+          return this.dateStr(d);
+        });
+      },
+      getLast4Weeks() {
+        const weeks = [];
+        for (let w = 3; w >= 0; w--) {
+          const days = Array.from({ length: 7 }, (_, i) => {
+            const d = new Date(this.today + 'T00:00:00');
+            d.setDate(d.getDate() - (w * 7) - (6 - i));
+            return this.dateStr(d);
+          });
+          weeks.push(days);
+        }
+        return weeks;
+      },
+      metrics() {
+        const days = this.getLast7Days();
+        let streak = 0;
+        for (let i = days.length - 1; i >= 0; i--) {
+          const gs = this.goals[days[i]] || [];
+          if (gs.length === 0) break;
+          if (gs.every(g => g.completed)) streak++;
+          else break;
+        }
+        const activePcts = days.filter(d => (this.goals[d] || []).length > 0).map(d => {
+          const gs = this.goals[d];
+          return (gs.filter(g => g.completed).length / gs.length) * 100;
+        });
+        const avgWeek = activePcts.length ? Math.round(activePcts.reduce((a, b) => a + b, 0) / activePcts.length) : 0;
+        const totalHours = days.reduce((s, d) => s + (this.goals[d] || []).filter(g=>g.completed).reduce((ss, g) => ss + (parseFloat(g.loggedHours ?? g.hours) || 0), 0), 0);
+        const totalGoals = days.reduce((s, d) => s + (this.goals[d] || []).length, 0);
+        return { streak, avgWeek, totalHours: +totalHours.toFixed(1), totalGoals };
+      },
+
+      renderCharts() {
+        const DEF = {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#a49fc0', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: { ticks: { color: '#a49fc0', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          },
+        };
+        const days = this.getLast7Days();
+        const dailyLabels = days.map(d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }));
+        const dailyCompleted = days.map(d => (this.goals[d] || []).filter(g => g.completed).length);
+        const dailyTotal = days.map(d => (this.goals[d] || []).length);
+
+        if (this._charts.daily) this._charts.daily.destroy();
+        const dc = document.getElementById('dailyChart');
+        if (dc) this._charts.daily = new Chart(dc, {
+          type: 'bar',
+          data: { labels: dailyLabels, datasets: [
+            { label: 'Completed', data: dailyCompleted, backgroundColor: 'rgba(167,139,250,0.85)', borderRadius: 6 },
+            { label: 'Planned', data: dailyTotal, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 6 },
+          ]},
+          options: { ...DEF, scales: { ...DEF.scales, y: { ...DEF.scales.y, beginAtZero: true, ticks: { ...DEF.scales.y.ticks, stepSize: 1 } } } },
+        });
+
+        const weeks = this.getLast4Weeks();
+        const weekLabels = weeks.map((wd, i) => 'W' + (i + 1) + ' · ' + new Date(wd[0] + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+        const weekPcts = weeks.map(wd => {
+          const total = wd.reduce((s, d) => s + (this.goals[d] || []).length, 0);
+          const done = wd.reduce((s, d) => s + (this.goals[d] || []).filter(g => g.completed).length, 0);
+          return total === 0 ? 0 : Math.round((done / total) * 100);
+        });
+
+        if (this._charts.weekly) this._charts.weekly.destroy();
+        const wc = document.getElementById('weeklyChart');
+        if (wc) this._charts.weekly = new Chart(wc, {
+          type: 'bar',
+          data: { labels: weekLabels, datasets: [{ data: weekPcts, backgroundColor: weekPcts.map(p => p >= 80 ? 'rgba(52,211,153,0.85)' : p >= 50 ? 'rgba(251,191,36,0.85)' : 'rgba(244,114,182,0.85)'), borderRadius: 6 }] },
+          options: { ...DEF, scales: { ...DEF.scales, y: { ...DEF.scales.y, min: 0, max: 100, ticks: { ...DEF.scales.y.ticks, callback: v => v + '%' } } } },
+        });
+
+        const hoursData = days.map(d => (this.goals[d] || []).filter(g=>g.completed).reduce((s, g) => s + (parseFloat(g.loggedHours ?? g.hours) || 0), 0));
+        if (this._charts.hours) this._charts.hours.destroy();
+        const hc = document.getElementById('hoursChart');
+        if (hc) this._charts.hours = new Chart(hc, {
+          type: 'line',
+          data: { labels: dailyLabels, datasets: [{ data: hoursData, borderColor: '#f472b6', backgroundColor: 'rgba(244,114,182,0.12)', fill: true, tension: 0.4, pointBackgroundColor: '#f472b6', pointRadius: 4 }] },
+          options: { ...DEF, scales: { ...DEF.scales, y: { ...DEF.scales.y, beginAtZero: true, ticks: { ...DEF.scales.y.ticks, callback: v => v + 'h' } } } },
+        });
+      },
+    };
+  }
+  </script>
+</body>
+</html>

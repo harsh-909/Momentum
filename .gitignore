@@ -1,0 +1,7 @@
+# Python bytecode cache (auto-generated)
+__pycache__/
+*.pyc
+
+# Personal user data - your actual goals/habits, not app code.
+# Keep this out of version history; it's private and changes constantly.
+userData/
