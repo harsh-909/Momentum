@@ -372,9 +372,13 @@
       // via x-model, so every keystroke mutates state and the debounced save() persists it.
       startEditGoal(goal) { this.editingGoalId = goal.id; },
       stopEditGoal(goal) {
-        goal.topic = (goal.topic || '').trim();
+        goal.topic = this.cleanText(goal.topic);
         const h = parseFloat(goal.hours);
         goal.hours = isNaN(h) || h < 0 ? 0 : h;   // guard against a cleared/negative hours field
+        // Strip blank lines from each subtask, then drop any that ended up empty.
+        goal.subtasks.forEach(s => { s.text = this.cleanText(s.text); });
+        goal.subtasks = goal.subtasks.filter(s => s.text !== '');
+        if (goal.subtasks.length > 0) goal.completed = goal.subtasks.every(s => s.completed);
         this.editingGoalId = null;
         this.save();
       },
@@ -384,6 +388,22 @@
         // Recompute completion from what remains; don't let an emptied list flip the goal complete.
         if (goal.subtasks.length > 0) goal.completed = goal.subtasks.every(s => s.completed);
         this.save();
+      },
+      // Grow an edit <textarea> to fit its content: reset to auto, then match scrollHeight.
+      // Called on x-init (when the field appears) and on every keystroke.
+      autoGrow(el) {
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = el.scrollHeight + 'px';
+      },
+      // Tidy multi-line text on save: drop blank lines and trailing whitespace so
+      // stray newlines don't persist as wasted space. Run on Done, never while typing.
+      cleanText(s) {
+        return (s || '')
+          .split('\n')
+          .map(line => line.replace(/\s+$/, ''))
+          .filter(line => line.trim() !== '')
+          .join('\n');
       },
       subtaskProgress(goal) {
         const done = goal.subtasks.filter(s => s.completed).length;
