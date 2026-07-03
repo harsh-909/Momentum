@@ -58,4 +58,6 @@ Metrics are computed on the fly from `dg_goals` over rolling windows: `getLast7D
 
 - IDs come from `uid()` (`Math.random` + timestamp). Keep using it for new goals/subtasks/habits.
 - UI copy is time-of-day aware via `isEvening()` / `greeting()` - "add a goal for tomorrow" in the evening, etc.
-- Prefer editing the existing `index.html` over splitting the UI into multiple files unless explicitly asked; the zero-build frontend is intentional. Keep `server.py` dependency-free (stdlib only).
+- Prefer editing the existing `index.html` over splitting the UI into multiple files unless there is an pragmatic requirement to split things; the zero-build frontend is intentional. Keep `server.py` dependency-free (stdlib only).
+
+Dont commit untill I ask explicity to do that.
