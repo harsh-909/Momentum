@@ -9,7 +9,7 @@
  *
  * Usage:
  *   node tests/app.test.js            # full logic suite
- *   node tests/app.test.js feature    # only the current feature (goal editing)
+ *   node tests/app.test.js feature    # only the current feature (partial-credit scoring)
  */
 'use strict';
 const fs = require('fs');
@@ -57,10 +57,87 @@ function seedGoal(a, over = {}) {
 }
 
 // ============================================================
-// CURRENT FEATURE: goal editing (inline edit + cleanup)
+// CURRENT FEATURE: partial-credit scoring
+// (goalProgress / dayProgressPct + streak threshold)
 // ============================================================
 function featureSuite() {
-  section('Feature: goal editing (cleanText / stopEditGoal / removeSubtask)');
+  section('Feature: partial-credit scoring (goalProgress / dayProgressPct / streak)');
+  const a = makeApp();
+
+  // ---- goalProgress: per-goal fraction, 0..1 ----
+  check('goalProgress: completed goal -> 1', a.goalProgress({ completed: true, subtasks: [] }) === 1);
+  check('goalProgress: no subtasks, incomplete -> 0', a.goalProgress({ completed: false, subtasks: [] }) === 0);
+  check('goalProgress: 2 of 4 subtasks -> 0.5', a.goalProgress({ completed: false, subtasks: [
+    { completed: true }, { completed: true }, { completed: false }, { completed: false },
+  ]}) === 0.5);
+  check('goalProgress: all subtasks done -> 1', a.goalProgress({ completed: false, subtasks: [
+    { completed: true }, { completed: true },
+  ]}) === 1);
+  check('goalProgress: missing subtasks array -> 0', a.goalProgress({ completed: false }) === 0);
+
+  // ---- dayProgressPct: averages per-goal progress ----
+  check('dayProgressPct: empty day -> 0', a.dayProgressPct([]) === 0);
+  check('dayProgressPct: all goals complete -> 100', a.dayProgressPct([
+    { completed: true, subtasks: [] }, { completed: true, subtasks: [] },
+  ]) === 100);
+  // one fully done (1) + one half done (0.5) -> avg 0.75 -> 75
+  check('dayProgressPct: partial mix -> 75', a.dayProgressPct([
+    { completed: true, subtasks: [] },
+    { completed: false, subtasks: [{ completed: true }, { completed: false }] },
+  ]) === 75);
+  // EDGE: rounding must never fake a perfect day (199/200 -> 99.5, would round to 100)
+  check('dayProgressPct: near-100 but unfinished clamps to 99', a.dayProgressPct([
+    { completed: false, subtasks: Array.from({ length: 200 }, (_, i) => ({ completed: i < 199 })) },
+  ]) === 99);
+
+  // ---- these feed the ring, history badge, weekly chart ----
+  {
+    const s = makeApp();
+    seedGoal(s, { completed: true, subtasks: [] });
+    seedGoal(s, { completed: false, subtasks: [{ id: 'x', text: 'x', completed: true }, { id: 'y', text: 'y', completed: false }] });
+    check('dayStats.pct reflects partial credit (75)', s.dayStats().pct === 75);
+    check('dayStats.completed stays whole goals (1)', s.dayStats().completed === 1 && s.dayStats().total === 2);
+    check('historyDayPct reflects partial credit (75)', s.historyDayPct(s.selectedDate) === 75);
+  }
+
+  // ---- streak: a day counts once it clears the 70% threshold ----
+  {
+    const s = makeApp();
+    const d = s.getLast7Days();
+    d[6] && (s.goals[d[6]] = [{ completed: false, subtasks: [
+      { completed: true }, { completed: true }, { completed: true }, { completed: true },
+      { completed: true }, { completed: true }, { completed: true },
+      { completed: false }, { completed: false }, { completed: false },
+    ]}]);                                             // today: 7/10 = exactly 70%
+    s.goals[d[5]] = [{ completed: true, subtasks: [] }];   // yesterday: 100%
+    check('streak: day at exactly 70% keeps the streak', s.metrics().streak === 2);
+  }
+  {
+    const s = makeApp();
+    const d = s.getLast7Days();
+    s.goals[d[6]] = [{ completed: false, subtasks: [
+      { completed: true }, { completed: true }, { completed: true },
+      { completed: false }, { completed: false },
+    ]}];                                              // today: 3/5 = 60%, below threshold
+    s.goals[d[5]] = [{ completed: true, subtasks: [] }];
+    check('streak: day below 70% breaks the streak', s.metrics().streak === 0);
+  }
+  {
+    const s = makeApp();
+    const d = s.getLast7Days();
+    s.goals[d[6]] = [{ completed: false, subtasks: [
+      { completed: true }, { completed: true }, { completed: true }, { completed: true },
+      { completed: false },
+    ]}];                                              // today: 4/5 = 80%
+    check('metrics.avgWeek uses partial credit (80)', s.metrics().avgWeek === 80);
+  }
+}
+
+// ============================================================
+// SHIPPED: goal editing (inline edit + cleanup) - permanent regression
+// ============================================================
+function goalEditingSuite() {
+  section('Goal editing (cleanText / stopEditGoal / removeSubtask)');
   const a = makeApp();
 
   // cleanText
@@ -127,6 +204,8 @@ function featureSuite() {
 // CORE app behavior (full regression)
 // ============================================================
 function coreSuite() {
+  goalEditingSuite();   // shipped feature, kept as permanent regression
+
   section('Core: goals & subtasks');
   {
     const a = makeApp();

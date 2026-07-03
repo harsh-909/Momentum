@@ -582,6 +582,25 @@
         this.save();
       },
 
+      // ---- Scoring (partial credit) ----
+      // Fraction of a goal that's done, 0..1. A goal with subtasks earns partial
+      // credit for each finished subtask; a goal without subtasks stays all-or-nothing.
+      goalProgress(g) {
+        if (g.completed) return 1;
+        const subs = g.subtasks || [];
+        if (subs.length) return subs.filter(s => s.completed).length / subs.length;
+        return 0;
+      },
+      // Whole-day progress as a rounded percent, averaging per-goal progress so
+      // partial work still moves the needle. Only reports 100 when every goal is
+      // truly complete - rounding must never fake a perfect day.
+      dayProgressPct(gs) {
+        if (!gs.length) return 0;
+        if (gs.every(g => g.completed)) return 100;
+        const avg = gs.reduce((s, g) => s + this.goalProgress(g), 0) / gs.length;
+        return Math.min(99, Math.round(avg * 100));
+      },
+
       // ---- Day stats ----
       dayStats() {
         const gs = this.goalsForDate(this.selectedDate);
@@ -589,7 +608,7 @@
         const total = gs.length;
         const hours = gs.reduce((s, g) => s + (parseFloat(g.hours) || 0), 0);
         const doneHours = gs.filter(g => g.completed).reduce((s, g) => s + (parseFloat(g.loggedHours ?? g.hours) || 0), 0);
-        const pct = total === 0 ? 0 : Math.round((completed / total) * 100);
+        const pct = this.dayProgressPct(gs);
         return { completed, total, hours: +hours.toFixed(2), doneHours: +doneHours.toFixed(2), pct };
       },
 
@@ -603,9 +622,7 @@
         else this.expandedHistoryDates.splice(idx, 1);
       },
       historyDayPct(date) {
-        const gs = this.goals[date] || [];
-        if (gs.length === 0) return 0;
-        return Math.round((gs.filter(g => g.completed).length / gs.length) * 100);
+        return this.dayProgressPct(this.goals[date] || []);
       },
       historyDaySummary(date) {
         const gs = this.goals[date] || [];
@@ -642,17 +659,18 @@
       },
       metrics() {
         const days = this.getLast7Days();
+        // A day keeps the streak alive once its partial-credit progress clears this bar,
+        // so a strong-but-imperfect day no longer breaks the chain.
+        const STREAK_THRESHOLD = 70;
         let streak = 0;
         for (let i = days.length - 1; i >= 0; i--) {
           const gs = this.goals[days[i]] || [];
           if (gs.length === 0) break;
-          if (gs.every(g => g.completed)) streak++;
+          if (this.dayProgressPct(gs) >= STREAK_THRESHOLD) streak++;
           else break;
         }
-        const activePcts = days.filter(d => (this.goals[d] || []).length > 0).map(d => {
-          const gs = this.goals[d];
-          return (gs.filter(g => g.completed).length / gs.length) * 100;
-        });
+        const activePcts = days.filter(d => (this.goals[d] || []).length > 0)
+          .map(d => this.dayProgressPct(this.goals[d]));
         const avgWeek = activePcts.length ? Math.round(activePcts.reduce((a, b) => a + b, 0) / activePcts.length) : 0;
         const totalHours = days.reduce((s, d) => s + (this.goals[d] || []).filter(g=>g.completed).reduce((ss, g) => ss + (parseFloat(g.loggedHours ?? g.hours) || 0), 0), 0);
         const totalGoals = days.reduce((s, d) => s + (this.goals[d] || []).length, 0);
@@ -686,11 +704,7 @@
 
         const weeks = this.getLast4Weeks();
         const weekLabels = weeks.map((wd, i) => 'W' + (i + 1) + ' · ' + new Date(wd[0] + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-        const weekPcts = weeks.map(wd => {
-          const total = wd.reduce((s, d) => s + (this.goals[d] || []).length, 0);
-          const done = wd.reduce((s, d) => s + (this.goals[d] || []).filter(g => g.completed).length, 0);
-          return total === 0 ? 0 : Math.round((done / total) * 100);
-        });
+        const weekPcts = weeks.map(wd => this.dayProgressPct(wd.flatMap(d => this.goals[d] || [])));
 
         if (this._charts.weekly) this._charts.weekly.destroy();
         const wc = document.getElementById('weeklyChart');

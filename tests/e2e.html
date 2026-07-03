@@ -13,8 +13,8 @@
 
   <script>
   // ------------------------------------------------------------------
-  // Browser end-to-end tests for the goal-editing feature. Runs the REAL
-  // index.html + app.js (loaded in the iframe) so there is no template drift.
+  // Browser end-to-end tests for the goal-editing + partial-credit scoring
+  // features. Runs the REAL index.html + app.js (in the iframe) so no template drift.
   // Results are written into #__results__ as JSON for the Node runner to parse.
   // ------------------------------------------------------------------
   const results = [];
@@ -123,12 +123,29 @@
     await sleep(120);
     rec('emptied subtask removed on Done', goal.subtasks.length === 0, 'len=' + goal.subtasks.length);
 
-    // 9. Full suite: a couple of broader UI smoke checks.
+    // 9. Partial-credit scoring: a half-finished goal fills the ring to 50%.
+    comp.goals[comp.today] = [];                        // start the day clean
+    comp.newGoal = { topic: 'Half done', hours: 2, subtasksText: 'a\nb' };
+    comp.addGoal();
+    await sleep(120);
+    const pg = comp.goals[comp.today][0];
+    rec('partial: fresh 2-subtask goal starts at 0%', comp.dayStats().pct === 0, 'pct=' + comp.dayStats().pct);
+    const subChk = q('input[type="checkbox"]');
+    rec('partial: subtask checkbox present', !!subChk);
+    if (subChk) subChk.click();                         // complete 1 of 2 subtasks via the UI
+    await waitFor(() => comp.dayStats().pct === 50, 3000);
+    rec('partial: one of two subtasks fills the ring to 50%', comp.dayStats().pct === 50, 'pct=' + comp.dayStats().pct);
+    const ringShows = await waitFor(() =>
+      Array.from(doc().querySelectorAll('*')).some(el => el.children.length === 0 && el.textContent.trim() === '50%'), 3000);
+    rec('partial: ring text displays 50%', !!ringShows);
+    rec('partial: goal not marked complete at 50%', pg.completed === false);
+
+    // 10. Full suite: a couple of broader UI smoke checks.
     if (suite === 'full') {
       const chk = q('.goal-card button.chk-btn');
       if (chk) chk.click();
       await sleep(100);
-      rec('full: clicking the checkbox completes the goal', goal.completed === true);
+      rec('full: clicking the checkbox completes the goal', pg.completed === true);
 
       comp.activeTab = 'backlog';
       await sleep(80);
