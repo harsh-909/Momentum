@@ -1,5 +1,5 @@
 ---
-description: Test whatever feature is In Progress in FEATURES.md - happy path + edge cases, no input needed.
+description: Test whatever feature is In Progress in workMatter.md - happy path + edge cases, no input needed.
 ---
 
 Test the feature **currently In Progress** and report the results. Run to completion without asking me anything.
