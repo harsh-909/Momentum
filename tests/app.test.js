@@ -57,11 +57,402 @@ function seedGoal(a, over = {}) {
 }
 
 // ============================================================
-// CURRENT FEATURE: partial-credit scoring
-// (goalProgress / dayProgressPct + streak threshold)
+// CURRENT FEATURE: time entry in hours + minutes
+// (hmToHours / fmtDuration / hoursPart / minsPart, planned + logged)
 // ============================================================
 function featureSuite() {
-  section('Feature: partial-credit scoring (goalProgress / dayProgressPct / streak)');
+  section('Feature: time entry in hours + minutes');
+  const a = makeApp();
+
+  // ---- hmToHours: combine the two fields into decimal hours ----
+  check('hmToHours: 1h 30m -> 1.5', a.hmToHours(1, 30) === 1.5);
+  check('hmToHours: 0h 45m -> 0.75', a.hmToHours(0, 45) === 0.75);
+  check('hmToHours: 2h 0m -> 2', a.hmToHours(2, 0) === 2);
+  check('hmToHours: blanks -> 0', a.hmToHours('', '') === 0);
+  check('hmToHours: negatives floored to 0', a.hmToHours(-3, -10) === 0);
+
+  // ---- hoursPart / minsPart: split decimal hours back into fields ----
+  check('hoursPart: 1.5 -> 1', a.hoursPart(1.5) === 1);
+  check('minsPart: 1.5 -> 30', a.minsPart(1.5) === 30);
+  check('minsPart: 0.25 (legacy quarter-hour) -> 15', a.minsPart(0.25) === 15);
+  check('split round-trips through hmToHours', a.hmToHours(a.hoursPart(2.75), a.minsPart(2.75)) === 2.75);
+
+  // ---- fmtDuration: human label, never shows 60m ----
+  check('fmtDuration: 1.5 -> "1h 30m"', a.fmtDuration(1.5) === '1h 30m');
+  check('fmtDuration: 2 -> "2h"', a.fmtDuration(2) === '2h');
+  check('fmtDuration: 0.75 -> "45m"', a.fmtDuration(0.75) === '45m');
+  check('fmtDuration: 0 -> "0m"', a.fmtDuration(0) === '0m');
+
+  // ---- addGoal reads the hours + minutes form fields ----
+  {
+    const s = makeApp();
+    s.newGoal = { topic: 'Study', hours: 1, minutes: 30, subtasksText: '' };
+    s.addGoal();
+    check('addGoal stores decimal hours from h+m', s.goals[TODAY][0].hours === 1.5);
+    check('addGoal resets minutes on the form', s.newGoal.minutes === 0);
+  }
+  {
+    const s = makeApp();
+    s.newGoal = { topic: 'Zero', hours: 0, minutes: 0, subtasksText: '' };
+    s.addGoal();
+    check('addGoal defaults empty time to 1h', s.goals[TODAY][0].hours === 1);
+  }
+
+  // ---- inline edit via setGoalHours ----
+  {
+    const s = makeApp();
+    const g = seedGoal(s, { hours: 2 });
+    s.setGoalHours(g, 0, 45);
+    check('setGoalHours writes decimal hours', g.hours === 0.75);
+  }
+
+  // ---- logHM: actual time after completion ----
+  {
+    const s = makeApp();
+    const g = seedGoal(s, { hours: 2, completed: true });
+    s.logHM(TODAY, 0, 1, 15);
+    check('logHM stores logged decimal hours', g.loggedHours === 1.25);
+    // EDGE: a read-only past day rejects logging.
+    const p = makeApp();
+    seedGoalOn(p, PAST, { completed: true });
+    p.logHM(PAST, 0, 3, 0);
+    check('logHM is a no-op on a read-only past day', p.goals[PAST][0].loggedHours === null);
+  }
+
+  // ---- habits store h+m too ----
+  {
+    const s = makeApp();
+    s.newHabit = { topic: 'Walk', hours: 0, minutes: 30, subtasksText: '', days: [0,1,2,3,4,5,6] };
+    s.submitHabit();
+    check('submitHabit stores decimal hours from h+m', s.recurring[0].hours === 0.5);
+    s.openEditHabit(s.recurring[0]);
+    check('openEditHabit splits hours into the h field', s.newHabit.hours === 0);
+    check('openEditHabit splits hours into the m field', s.newHabit.minutes === 30);
+  }
+}
+
+// ============================================================
+// SHIPPED: read-only past days + automatic carry-over - permanent regression
+// (isReadonly / autoCarryPastDays / carryCopy)
+// ============================================================
+const PAST = '2026-07-01';   // strictly before TODAY (2026-07-03)
+
+// Seed a goal on an arbitrary date (seedGoal only targets selectedDate).
+function seedGoalOn(a, date, over = {}) {
+  const g = Object.assign({
+    id: a.uid(), topic: 'Goal', hours: 1, loggedHours: null,
+    completed: false, subtasks: [], createdAt: date, addingSubtask: false,
+  }, over);
+  (a.goals[date] = a.goals[date] || []).push(g);
+  return g;
+}
+
+function readonlyCarrySuite() {
+  section('Read-only past days + automatic carry-over');
+
+  // ---- isReadonly: only past days are frozen ----
+  {
+    const a = makeApp();
+    check('isReadonly: past day is read-only', a.isReadonly(PAST) === true);
+    check('isReadonly: today is editable', a.isReadonly(TODAY) === false);
+    check('isReadonly: future day is editable', a.isReadonly('2026-07-05') === false);
+  }
+
+  // ---- THE BUG: carrying unfinished work must NOT inflate the past day's score ----
+  {
+    const a = makeApp();
+    // Yesterday: 4 goals, 2 finished -> the honest score is 50%.
+    seedGoalOn(a, PAST, { topic: 'done1', completed: true });
+    seedGoalOn(a, PAST, { topic: 'done2', completed: true });
+    seedGoalOn(a, PAST, { topic: 'miss1', completed: false });
+    seedGoalOn(a, PAST, { topic: 'miss2', completed: false });
+
+    check('pre-carry score is the honest 50%', a.dayProgressPct(a.goals[PAST]) === 50);
+    a.autoCarryPastDays();
+    // Regression guard for the inflation bug: the day KEEPS all 4 goals, so the score stays 50%.
+    check('past day retains all goals after carry', a.goals[PAST].length === 4);
+    check('past-day score is NOT inflated to 100 (stays 50)', a.dayProgressPct(a.goals[PAST]) === 50);
+    check('only the 2 unfinished goals were copied to backlog', a.backlog.length === 2);
+    check('carried copies are the unfinished ones', eq(a.backlog.map(g => g.topic).sort(), ['miss1', 'miss2']));
+    check('source goals are flagged carried', a.goals[PAST].filter(g => g.carried).length === 2);
+    check('completed source goals are not flagged carried', a.goals[PAST].filter(g => g.completed && g.carried).length === 0);
+  }
+
+  // ---- Partial goal: only the incomplete subtasks are copied, past record is untouched ----
+  {
+    const a = makeApp();
+    const g = seedGoalOn(a, PAST, { topic: 'partial', completed: false, subtasks: [
+      { id: 's1', text: 'done step', completed: true },
+      { id: 's2', text: 'todo A', completed: false },
+      { id: 's3', text: 'todo B', completed: false },
+    ]});
+    a.autoCarryPastDays();
+    check('partial: past goal keeps ALL its subtasks', g.subtasks.length === 3);
+    check('partial: past goal keeps the completed subtask', g.subtasks[0].completed === true);
+    const copy = a.backlog[0];
+    check('partial: backlog copy carries only the 2 incomplete subtasks', copy.subtasks.length === 2);
+    check('partial: copy carries the right subtask text', eq(copy.subtasks.map(s => s.text).sort(), ['todo A', 'todo B']));
+    check('partial: copy subtasks start incomplete', copy.subtasks.every(s => !s.completed));
+    check('partial: copy is not completed', copy.completed === false);
+  }
+
+  // ---- Independence: copy gets fresh ids; finishing it never touches the past ----
+  {
+    const a = makeApp();
+    const g = seedGoalOn(a, PAST, { id: 'orig', topic: 'x', completed: false, subtasks: [
+      { id: 'sub-orig', text: 'step', completed: false },
+    ]});
+    a.autoCarryPastDays();
+    const copy = a.backlog[0];
+    check('independence: copy has a fresh goal id', copy.id !== 'orig');
+    check('independence: copy has fresh subtask ids', copy.subtasks[0].id !== 'sub-orig');
+    // Complete the backlog copy; the frozen past instance must not change.
+    copy.completed = true; copy.subtasks[0].completed = true;
+    check('independence: past goal stays incomplete', g.completed === false && g.subtasks[0].completed === false);
+    check('independence: past day score unaffected', a.dayProgressPct(a.goals[PAST]) === 0);
+  }
+
+  // ---- Idempotent: a second sweep carries nothing new (carried flag blocks re-carry) ----
+  {
+    const a = makeApp();
+    seedGoalOn(a, PAST, { topic: 'miss', completed: false });
+    a.autoCarryPastDays();
+    a.autoCarryPastDays();
+    check('idempotent: re-running the sweep does not duplicate', a.backlog.length === 1);
+  }
+
+  // ---- Watermark (carriedThrough): advances to yesterday and blocks re-sweeping ----
+  {
+    const a = makeApp();   // TODAY = 2026-07-03 -> yesterday = 2026-07-02
+    check('watermark: starts empty', a.carriedThrough === '');
+    seedGoalOn(a, PAST, { topic: 'old miss', completed: false });   // PAST = 2026-07-01
+    a.autoCarryPastDays();
+    check('watermark: advances to yesterday after a sweep', a.carriedThrough === '2026-07-02');
+    check('watermark: swept the past day before it', a.backlog.length === 1);
+    check('watermark: persisted in snapshot', a.snapshot().carriedThrough === '2026-07-02');
+  }
+  {
+    // A day at/under the watermark is skipped even if it holds an un-flagged pending goal.
+    const a = makeApp();
+    a.carriedThrough = '2026-07-02';
+    seedGoalOn(a, '2026-07-02', { topic: 'already-swept-day', completed: false });
+    a.autoCarryPastDays();
+    check('watermark: does not re-sweep a day at/under the watermark', a.backlog.length === 0);
+    check('watermark: skipped goal is left un-flagged', !a.goals['2026-07-02'][0].carried);
+  }
+  {
+    // A day strictly after the watermark (but before today) is swept.
+    const a = makeApp();
+    a.carriedThrough = '2026-07-01';
+    seedGoalOn(a, '2026-07-02', { topic: 'new miss', completed: false });
+    a.autoCarryPastDays();
+    check('watermark: sweeps a day after the watermark', a.backlog.length === 1 && a.backlog[0].topic === 'new miss');
+    check('watermark: does not rewind on a later run', a.carriedThrough === '2026-07-02');
+  }
+  {
+    // Empty history still advances the watermark so future loads have a clean lower bound.
+    const a = makeApp();
+    a.autoCarryPastDays();
+    check('watermark: set even when there is nothing to carry', a.carriedThrough === '2026-07-02');
+  }
+
+  // ---- Habits are never carried; today/future days are never swept ----
+  {
+    const a = makeApp();
+    seedGoalOn(a, PAST, { topic: 'habit', completed: false, recurringId: 'r1' });
+    seedGoalOn(a, TODAY, { topic: 'today-undone', completed: false });
+    seedGoalOn(a, '2026-07-05', { topic: 'future-undone', completed: false });
+    a.autoCarryPastDays();
+    check('habits on a past day are never carried', a.backlog.length === 0);
+    check('past habit is not flagged carried', !a.goals[PAST][0].carried);
+    check('today is not swept', !a.goals[TODAY][0].carried);
+    check('future is not swept', !a.goals['2026-07-05'][0].carried);
+  }
+
+  // ---- Edge: goal left unchecked but all subtasks done -> flagged, nothing copied ----
+  {
+    const a = makeApp();
+    seedGoalOn(a, PAST, { topic: 'no-remainder', completed: false, subtasks: [
+      { id: 'a', text: 'a', completed: true }, { id: 'b', text: 'b', completed: true },
+    ]});
+    a.autoCarryPastDays();
+    check('no-remainder goal is flagged carried', a.goals[PAST][0].carried === true);
+    check('no-remainder goal copies nothing to backlog', a.backlog.length === 0);
+  }
+
+  // ---- Read-only guards: mutators no-op on a past date ----
+  {
+    const a = makeApp();
+    const g = seedGoalOn(a, PAST, { topic: 'frozen', completed: false, subtasks: [
+      { id: 's1', text: 's1', completed: false },
+    ]});
+    a.selectedDate = PAST;
+    a.toggleGoal(PAST, 0);
+    check('read-only: toggleGoal is a no-op on a past day', g.completed === false);
+    a.toggleSubtask(PAST, 0, 0);
+    check('read-only: toggleSubtask is a no-op', g.subtasks[0].completed === false);
+    a.logHours(PAST, 0, '5');
+    check('read-only: logHours is a no-op', g.loggedHours === null);
+    a.subtaskDrafts[g.id] = 'sneaky';
+    a.commitSubtask(PAST, 0);
+    check('read-only: commitSubtask is a no-op', g.subtasks.length === 1);
+    a.removeSubtask(PAST, 0, 0);
+    check('read-only: removeSubtask is a no-op', g.subtasks.length === 1);
+    a.deleteGoal(PAST, 0);
+    check('read-only: deleteGoal is a no-op', (a.goals[PAST] || []).length === 1);
+    a.startEditGoal(g);
+    check('read-only: startEditGoal is a no-op', a.editingGoalId === null);
+    a.newGoal = { topic: 'new', hours: 1, subtasksText: '' };
+    a.addGoal();
+    check('read-only: addGoal is a no-op on a past day', a.goals[PAST].length === 1);
+    a.moveToBacklog(PAST, 0);
+    check('read-only: moveToBacklog is a no-op on a past day', a.goals[PAST].length === 1 && a.backlog.length === 0);
+  }
+
+  // ---- collapseSubtaskAdd: the inline add-subtask row folds away when focus leaves it ----
+  {
+    // Run the deferred check synchronously and control what "has focus" via a stub document.
+    const runCollapse = (a, goal, focusInsideRow) => {
+      const savedST = global.setTimeout, savedDoc = global.document;
+      const focused = {};
+      global.setTimeout = (fn) => { fn(); return 0; };
+      global.document = { activeElement: focused };
+      // ev.currentTarget is the row; contains() reports whether focus landed back inside it.
+      a.collapseSubtaskAdd({ currentTarget: { contains: (el) => focusInsideRow && el === focused } }, goal);
+      global.setTimeout = savedST; global.document = savedDoc;
+    };
+
+    const a = makeApp();
+    const goal = { id: 'g1', addingSubtask: true };
+    a.subtaskDrafts['g1'] = 'leftover';
+    runCollapse(a, goal, false);   // focus moved outside the row
+    check('collapseSubtaskAdd: collapses when focus leaves the row', goal.addingSubtask === false);
+    check('collapseSubtaskAdd: clears the draft on collapse', !('g1' in a.subtaskDrafts));
+
+    const b = makeApp();
+    const goal2 = { id: 'g2', addingSubtask: true };
+    b.subtaskDrafts['g2'] = 'typing';
+    runCollapse(b, goal2, true);   // focus stayed inside (e.g. moved to the Add button)
+    check('collapseSubtaskAdd: stays open when focus is still inside the row', goal2.addingSubtask === true);
+    check('collapseSubtaskAdd: keeps the draft while still focused inside', b.subtaskDrafts['g2'] === 'typing');
+  }
+
+  // ---- Day boundary at 03:00 (currentDay): late-night work counts to the prior day ----
+  {
+    const a = makeApp();
+    check('currentDay: default boundary is 3am', a.dayStartHour === 3);
+    // (month is 0-indexed: 6 = July)
+    check('currentDay: 00:00 reads as the previous day', a.currentDay(new Date(2026, 6, 6, 0, 0)) === '2026-07-05');
+    check('currentDay: 02:30 reads as the previous day', a.currentDay(new Date(2026, 6, 6, 2, 30)) === '2026-07-05');
+    check('currentDay: exactly 03:00 flips to the new day', a.currentDay(new Date(2026, 6, 6, 3, 0)) === '2026-07-06');
+    check('currentDay: 03:30 reads as the new day', a.currentDay(new Date(2026, 6, 6, 3, 30)) === '2026-07-06');
+    check('currentDay: midday reads as the same day', a.currentDay(new Date(2026, 6, 6, 13, 0)) === '2026-07-06');
+  }
+
+  // ---- Live day rollover (checkDayRollover): new-day setup at the boundary while running ----
+  {
+    const a = makeApp();   // today = 2026-07-03
+    a.recurring = [{ id: 'r1', topic: 'Meditate', hours: 0.5, subtasks: [], startDate: '2026-07-03', days: [0,1,2,3,4,5,6] }];
+    seedGoalOn(a, '2026-07-03', { topic: 'left over', completed: false });
+    a.checkDayRollover('2026-07-04');   // simulate the clock crossing midnight
+    check('rollover: today advances to the new date', a.today === '2026-07-04');
+    check('rollover: selectedDate follows onto the fresh day', a.selectedDate === '2026-07-04');
+    check('rollover: yesterday\'s unfinished goal is carried to backlog', a.backlog.some(g => g.topic === 'left over'));
+    check('rollover: yesterday\'s goal is left in place, flagged carried', a.goals['2026-07-03'].some(g => g.topic === 'left over' && g.carried));
+    check('rollover: yesterday is now read-only', a.isReadonly('2026-07-03') === true);
+    check('rollover: today\'s habit is seeded on the new day', (a.goals['2026-07-04'] || []).some(g => g.recurringId === 'r1'));
+    check('rollover: watermark advanced to the new yesterday', a.carriedThrough === '2026-07-03');
+  }
+  {
+    // Same-day call is a no-op; a user parked on another date isn't yanked to today.
+    const a = makeApp();
+    const savesBefore = a._saves || 0;
+    a.checkDayRollover('2026-07-03');
+    check('rollover: same-date call does nothing', a.today === '2026-07-03' && (a._saves || 0) === savesBefore);
+
+    const b = makeApp();
+    b.selectedDate = '2026-07-01';   // deliberately viewing an earlier day
+    b.checkDayRollover('2026-07-04');
+    check('rollover: does not move a user parked on another date', b.selectedDate === '2026-07-01');
+    check('rollover: still advances today underneath them', b.today === '2026-07-04');
+  }
+  {
+    // Guard: never rolls over while logged out.
+    const a = makeApp();
+    a.loggedIn = false;
+    a.checkDayRollover('2026-07-09');
+    check('rollover: no-op when logged out', a.today === '2026-07-03');
+  }
+}
+
+// ============================================================
+// SHIPPED: drag-to-reorder (moveGoal / moveSubtask) - permanent regression
+// ============================================================
+function dragReorderSuite() {
+  section('Drag-to-reorder (moveGoal / moveSubtask)');
+  const a = makeApp();
+
+  // ---- moveGoal: reorder goals within the selected day ----
+  seedGoal(a, { topic: 'A' });
+  seedGoal(a, { topic: 'B' });
+  seedGoal(a, { topic: 'C' });
+  const topics = () => a.goals[a.selectedDate].map(g => g.topic);
+
+  a.moveGoal(0, 2);
+  check('moveGoal moves the first goal down to the target index', eq(topics(), ['B', 'C', 'A']));
+  a.moveGoal(2, 0);
+  check('moveGoal moves the last goal up to the front', eq(topics(), ['A', 'B', 'C']));
+
+  const savesBefore = a._saves || 0;
+  a.moveGoal(1, 1);
+  check('moveGoal with same index is a no-op', eq(topics(), ['A', 'B', 'C']));
+  check('moveGoal no-op does not persist', (a._saves || 0) === savesBefore);
+
+  a.moveGoal(0, 5);
+  check('moveGoal ignores an out-of-bounds target', eq(topics(), ['A', 'B', 'C']));
+  a.moveGoal(null, 1);
+  check('moveGoal ignores a null source', eq(topics(), ['A', 'B', 'C']));
+
+  // ---- moveSubtask: reorder within a single goal ----
+  const g = seedGoal(a, { topic: 'withSubs', subtasks: [
+    { id: 's1', text: 'one', completed: false },
+    { id: 's2', text: 'two', completed: false },
+    { id: 's3', text: 'three', completed: false },
+  ]});
+  const subText = () => g.subtasks.map(s => s.text);
+
+  a.moveSubtask(g, 0, 2);
+  check('moveSubtask moves a subtask down', eq(subText(), ['two', 'three', 'one']));
+  a.moveSubtask(g, 2, 0);
+  check('moveSubtask moves a subtask up', eq(subText(), ['one', 'two', 'three']));
+  a.moveSubtask(g, 1, 1);
+  check('moveSubtask with same index is a no-op', eq(subText(), ['one', 'two', 'three']));
+  a.moveSubtask(g, 0, 9);
+  check('moveSubtask ignores an out-of-bounds target', eq(subText(), ['one', 'two', 'three']));
+
+  // EDGE: reordering moves the whole subtask object, so completion state rides along.
+  const g6 = seedGoal(a, { subtasks: [
+    { id: 'x', text: 'x', completed: true },
+    { id: 'y', text: 'y', completed: false },
+  ]});
+  a.moveSubtask(g6, 1, 0);
+  check('moveSubtask preserves each subtask completion state',
+    g6.subtasks[0].text === 'y' && g6.subtasks[0].completed === false &&
+    g6.subtasks[1].text === 'x' && g6.subtasks[1].completed === true);
+
+  // Transient drag state must never be persisted.
+  a.dragGoalIndex = 2; a.dragSubGoalId = 'zzz'; a.dragSubIndex = 1;
+  const snap = a.snapshot();
+  check('snapshot() excludes dragGoalIndex', !('dragGoalIndex' in snap));
+  check('snapshot() excludes dragSubGoalId', !('dragSubGoalId' in snap));
+}
+
+// ============================================================
+// SHIPPED: partial-credit scoring - permanent regression
+// (goalProgress / dayProgressPct + streak threshold)
+// ============================================================
+function partialCreditSuite() {
+  section('Partial-credit scoring (goalProgress / dayProgressPct / streak)');
   const a = makeApp();
 
   // ---- goalProgress: per-goal fraction, 0..1 ----
@@ -204,7 +595,10 @@ function goalEditingSuite() {
 // CORE app behavior (full regression)
 // ============================================================
 function coreSuite() {
-  goalEditingSuite();   // shipped feature, kept as permanent regression
+  goalEditingSuite();     // shipped feature, kept as permanent regression
+  partialCreditSuite();   // shipped feature, kept as permanent regression
+  dragReorderSuite();     // shipped feature, kept as permanent regression
+  readonlyCarrySuite();   // shipped feature, kept as permanent regression
 
   section('Core: goals & subtasks');
   {
@@ -244,15 +638,16 @@ function coreSuite() {
     check('moveToBacklog stamps originalDate', a.backlog[0].originalDate === TODAY);
     check('moveToBacklog removes from the day', (a.goals[TODAY] || []).length === 0);
 
-    // endOfDay: carries incomplete non-habit goals only
-    const b = makeApp();
-    seedGoal(b, { topic: 'done', completed: true });
-    seedGoal(b, { topic: 'undone', completed: false });
-    seedGoal(b, { topic: 'habit', completed: false, recurringId: 'r1' });
-    b.endOfDay();
-    check('endOfDay keeps completed + habits', eq((b.goals[TODAY] || []).map(g => g.topic).sort(), ['done', 'habit']));
-    check('endOfDay carries the incomplete goal to backlog', b.backlog.length === 1 && b.backlog[0].topic === 'undone');
-    check('endOfDay never backlogs a habit', b.backlog.every(x => x.topic !== 'habit'));
+    // A habit instance CAN be moved to the backlog by hand, and is detached from its template.
+    const h = makeApp();
+    const habitInst = seedGoal(h, { topic: 'Meditate', completed: false, recurringId: 'r1' });
+    h.moveToBacklog(TODAY, h.goals[TODAY].indexOf(habitInst));
+    check('moveToBacklog can move a habit instance by hand', h.backlog.length === 1 && h.backlog[0].topic === 'Meditate');
+    check('moveToBacklog detaches the habit (drops recurringId)', !('recurringId' in h.backlog[0]));
+    check('moveToBacklog removes the habit instance from the day', (h.goals[TODAY] || []).length === 0);
+
+    // (Past-day carry-over lives in featureSuite: autoCarryPastDays copies unfinished
+    // work without emptying or inflating the past day - the endOfDay flow was removed.)
 
     // scheduleFromBacklog
     const c = makeApp();
@@ -313,7 +708,7 @@ function coreSuite() {
     check('normalizeUsername lowercases', a.normalizeUsername('TestUser') === 'testuser');
     check('normalizeUsername rejects traversal', a.normalizeUsername('../x') === '');
     check('snapshot shape', eq(Object.keys(a.snapshot()).sort(),
-      ['backlog', 'goals', 'install', 'recurring', 'seeded', 'updatedAt', 'username']));
+      ['backlog', 'carriedThrough', 'goals', 'install', 'recurring', 'seeded', 'updatedAt', 'username']));
   }
 }
 

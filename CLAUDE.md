@@ -44,9 +44,9 @@ Import/Export (`exportData()` / `importData()`) round-trips the same `snapshot()
 **Dates are strings, never Date objects, in state.** Always `YYYY-MM-DD` via `dateStr()`. When you need a real Date, parse with `new Date(str + 'T00:00:00')` (local midnight - avoids UTC off-by-one). Follow this pattern; mixing raw `new Date(str)` will introduce timezone bugs.
 
 **Habits are templates, not stored instances.** A habit in `recurring` is materialized into a day's goal list on demand by `ensureRecurring(date)`, which only ever seeds **today** (never past or future days, even on navigation), only on weekdays in the habit's `days` array, and records the placement in `seeded` so a deleted instance never reappears. Materialized goals carry a `recurringId` back-reference. Consequences to preserve when editing:
-- `endOfDay()` never backlogs habits (`recurringId` goals are excluded).
+- `autoCarryPastDays()` never carries habits automatically (`recurringId` goals are skipped).
 - `syncHabitToToday()` propagates a template edit onto today's instance *only if untouched/incomplete*, and pulls the instance out if it's no longer scheduled today.
-- The "move to backlog" button is hidden for habit-derived goals.
+- The "move to backlog" button IS available for habit-derived goals, but `moveToBacklog()` detaches the instance from its template (drops `recurringId`) so a rescheduled catch-up task doesn't collide with a freshly-seeded instance on the target day.
 
 **Goal <-> subtask completion coupling:** toggling a goal complete marks all subtasks complete (`toggleGoal`); toggling subtasks recomputes the parent's `completed` as "every subtask done" (`toggleSubtask`); adding a subtask un-completes the parent.
 

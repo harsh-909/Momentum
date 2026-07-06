@@ -9,6 +9,10 @@
         { id: 'metrics', label: 'Momentum', icon: '📈' },
       ],
       today: '',
+      // A logical "day" starts at this local hour, not midnight, so late-night work
+      // before it still counts toward the previous day. The live rollover fires here
+      // too. Everything that derives "today" goes through currentDay().
+      dayStartHour: 3,
       minDate: '',
       selectedDate: '',
       install: '',
@@ -16,14 +20,24 @@
       backlog: [],
       recurring: [],
       seeded: {},
-      newGoal: { topic: '', hours: 1, subtasksText: '' },
+      // Watermark: every day on or before this date has had its unfinished work
+      // swept into the backlog. Advances to "yesterday" on each load so a day is
+      // never carried twice (see autoCarryPastDays). '' means "nothing swept yet".
+      carriedThrough: '',
+      newGoal: { topic: '', hours: 1, minutes: 0, subtasksText: '' },
       // Transient "new subtask" input text, keyed by goal id. Intentionally NOT
       // part of snapshot() - half-typed drafts must never be persisted to disk.
       subtaskDrafts: {},
-      newHabit: { topic: '', hours: 0.5, subtasksText: '', days: [0,1,2,3,4,5,6] },
+      newHabit: { topic: '', hours: 0, minutes: 30, subtasksText: '', days: [0,1,2,3,4,5,6] },
       habitFormOpen: false,
       editingId: null,
       editingGoalId: null,   // which goal is in inline-edit mode; transient, never persisted
+      // Drag-to-reorder state (transient, never persisted - snapshot() lists fields explicitly)
+      dragGoalIndex: null,      // index of the goal being dragged
+      dragOverGoalIndex: null,  // goal index currently hovered as a drop target
+      dragSubGoalId: null,      // id of the goal whose subtask is being dragged
+      dragSubIndex: null,       // index of the subtask being dragged
+      dragOverSubIndex: null,   // subtask index currently hovered as a drop target
       weekdayNames: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
       weekdayShort: ['Su','Mo','Tu','We','Th','Fr','Sa'],
       historyFilter: 'all',
@@ -64,7 +78,7 @@
             '<a href="http://localhost:8899" style="display:inline-block;margin-top:1rem;padding:0.7rem 1.4rem;border-radius:0.8rem;background:linear-gradient(120deg,#8b5cf6,#ec4899);color:#fff;font-weight:600;text-decoration:none">Open Momentum →</a></div></div>';
           return;
         }
-        this.today = this.dateStr(new Date());
+        this.today = this.currentDay();
         this.selectedDate = this.today;
         this.pickQuote();
         await this.fetchUsers();
@@ -76,6 +90,51 @@
         });
         // Best-effort flush if the tab is closed with an unsaved change pending.
         window.addEventListener('beforeunload', () => this.beacon());
+        // The app is meant to run continuously, so notice a new day live (not only on reload).
+        this.startDayWatcher();
+      },
+
+      // ---- Live day rollover ----
+      // The logical current day. A day flips at dayStartHour (03:00) local, so we shift
+      // the clock back by that many hours before taking the date - anything before 3am
+      // still reads as the previous day. Optional `when` keeps it testable.
+      currentDay(when) {
+        const d = when ? new Date(when.getTime()) : new Date();
+        d.setHours(d.getHours() - this.dayStartHour);
+        return this.dateStr(d);
+      },
+      // Runs the "new day" setup at the dayStartHour boundary while the app stays open:
+      // advance `today`, carry the previous day's unfinished work to the backlog, and
+      // seed today's habits. Registered once in init(); it no-ops until a user is logged
+      // in. A focus/visibility re-check catches the case where the laptop slept across
+      // the boundary and the timer fired late (or hasn't fired yet).
+      startDayWatcher() {
+        const scheduleNext = () => {
+          const now = new Date();
+          // Fire a couple of seconds past the next dayStartHour boundary, then reschedule.
+          const next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), this.dayStartHour, 0, 2, 0);
+          if (next <= now) next.setDate(next.getDate() + 1);
+          clearTimeout(this._midnightTimer);
+          this._midnightTimer = setTimeout(() => { this.checkDayRollover(); scheduleNext(); }, next - now);
+        };
+        scheduleNext();
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) this.checkDayRollover(); });
+        window.addEventListener('focus', () => this.checkDayRollover());
+      },
+      // Advance to the current logical day and re-run the new-day setup if it changed.
+      // Takes an optional date string so it stays testable without a real clock.
+      checkDayRollover(nowStr) {
+        if (!this.loggedIn) return;
+        nowStr = nowStr || this.currentDay();
+        if (nowStr === this.today) return;
+        const wasOnToday = this.selectedDate === this.today;
+        this.today = nowStr;
+        this.pickQuote();
+        if (wasOnToday) this.selectedDate = this.today;   // follow the user onto the fresh day
+        this.autoCarryPastDays();   // yesterday is now past -> its unfinished work is carried
+        this.ensureRecurring(this.today);
+        if (this.activeTab === 'metrics') this.$nextTick(() => this.renderCharts());
+        this.save();
       },
 
       pickQuote() {
@@ -107,6 +166,7 @@
             this.backlog = d.backlog || [];
             this.recurring = d.recurring || [];
             this.seeded = d.seeded || {};
+            this.carriedThrough = d.carriedThrough || '';
             this.install = d.install || this.today;
           } else if (res.status === 404) {
             this.loginError = `No profile named "${clean}" yet - click Sign up to create it.`;
@@ -143,6 +203,7 @@
         }
         // Brand-new user: empty profile installed today.
         this.goals = {}; this.backlog = []; this.recurring = []; this.seeded = {};
+        this.carriedThrough = '';
         this.install = this.today;
         await this._enterProfile(clean);
       },
@@ -154,6 +215,7 @@
         const dataDates = Object.keys(this.goals).filter(d => (this.goals[d] || []).length > 0);
         this.minDate = dataDates.length ? [this.install, ...dataDates].sort()[0] : this.install;
         this.loggedIn = true;
+        this.autoCarryPastDays();   // sweep missed past days into the backlog (once each)
         this.ensureRecurring(this.today);
         await this.flushNow();   // persist immediately so a new profile's file exists
         await this.fetchUsers();
@@ -197,7 +259,8 @@
         return "Winding down";
       },
       dateLabel() {
-        const d = new Date();
+        // The logical day (before 3am this is still "yesterday"), to match `today`.
+        const d = new Date(this.currentDay() + 'T00:00:00');
         return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
       },
 
@@ -212,6 +275,7 @@
           backlog: this.backlog,
           recurring: this.recurring,
           seeded: this.seeded,
+          carriedThrough: this.carriedThrough,
         };
       },
       // Debounced save: many rapid mutations (checking subtasks, etc.) collapse
@@ -268,10 +332,12 @@
           this.backlog = d.backlog || [];
           this.recurring = d.recurring || [];
           this.seeded = d.seeded || {};
+          this.carriedThrough = d.carriedThrough || '';
           if (d.install) this.install = d.install;
           this.selectedDate = this.today;
           const dataDates = Object.keys(this.goals).filter(x => (this.goals[x] || []).length > 0);
           this.minDate = dataDates.length ? [this.install, ...dataDates].sort()[0] : this.install;
+          this.autoCarryPastDays();   // sweep any missed past days from the imported data
           this.ensureRecurring(this.today);
           await this.flushNow();
           if (this.activeTab === 'metrics') this.$nextTick(() => this.renderCharts());
@@ -286,6 +352,25 @@
       // ---- Helpers ----
       dateStr(d) {
         return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      },
+
+      // ---- Time helpers ----
+      // Time is stored as decimal hours (unchanged data model); the UI enters and
+      // shows it as hours + minutes. These convert between the two representations.
+      hmToHours(h, m) {
+        const hh = Math.max(0, Math.floor(Number(h) || 0));
+        const mm = Math.max(0, Math.floor(Number(m) || 0));
+        return +(hh + mm / 60).toFixed(4);
+      },
+      hoursPart(dec) { return Math.floor((Number(dec) || 0) + 1e-9); },
+      minsPart(dec) { return Math.round(((Number(dec) || 0) - this.hoursPart(dec)) * 60); },
+      // Render decimal hours as "1h 30m" / "45m" / "2h" (via total minutes, so it never shows 60m).
+      fmtDuration(dec) {
+        const total = Math.round((Number(dec) || 0) * 60);
+        const h = Math.floor(total / 60), m = total % 60;
+        if (h && m) return `${h}h ${m}m`;
+        if (h) return `${h}h`;
+        return `${m}m`;
       },
       shiftDate(delta) {
         const d = new Date(this.selectedDate + 'T00:00:00');
@@ -318,13 +403,18 @@
 
       // ---- Goals ----
       goalsForDate(date) { return this.goals[date] || []; },
+      // Past days are a frozen, read-only record: their score must keep reflecting
+      // what actually happened. Only today and future days can be mutated. String
+      // compare is safe because every date is a zero-padded YYYY-MM-DD (see dateStr).
+      isReadonly(date) { return date < this.today; },
       addGoal() {
+        if (this.isReadonly(this.selectedDate)) return;
         if (!this.newGoal.topic.trim()) return;
         const subtasks = this.newGoal.subtasksText.split('\n').map(s => s.trim()).filter(Boolean).map(text => ({ id: this.uid(), text, completed: false }));
         const goal = {
           id: this.uid(),
           topic: this.newGoal.topic.trim(),
-          hours: this.newGoal.hours || 1,
+          hours: this.hmToHours(this.newGoal.hours, this.newGoal.minutes) || 1,
           loggedHours: null,
           completed: false,
           subtasks,
@@ -336,8 +426,11 @@
         this.save();
         this.resetNewGoal();
       },
-      resetNewGoal() { this.newGoal = { topic: '', hours: 1, subtasksText: '' }; },
+      resetNewGoal() { this.newGoal = { topic: '', hours: 1, minutes: 0, subtasksText: '' }; },
+      // Inline goal-time edit: fold the hours + minutes fields back into decimal hours.
+      setGoalHours(goal, h, m) { if (this.isReadonly(this.selectedDate)) return; goal.hours = this.hmToHours(h, m); this.save(); },
       toggleGoal(date, gi, ev) {
+        if (this.isReadonly(date)) return;
         const g = this.goals[date][gi];
         g.completed = !g.completed;
         if (g.completed) {
@@ -347,12 +440,14 @@
         this.save();
       },
       toggleSubtask(date, gi, si) {
+        if (this.isReadonly(date)) return;
         const goal = this.goals[date][gi];
         goal.subtasks[si].completed = !goal.subtasks[si].completed;
         goal.completed = goal.subtasks.every(s => s.completed);
         this.save();
       },
       commitSubtask(date, gi) {
+        if (this.isReadonly(date)) return;
         const goal = this.goals[date][gi];
         const text = (this.subtaskDrafts[goal.id] || '').trim();
         if (!text) return;
@@ -361,16 +456,64 @@
         goal.completed = false;
         this.save();
       },
+      // Collapse the inline "add subtask" row once focus leaves it entirely. The check
+      // is deferred a tick so clicking the Add button (which blurs the input before its
+      // click fires - and on some browsers the button never takes focus) still commits;
+      // if focus landed back inside the row, we keep it open for rapid entry.
+      collapseSubtaskAdd(ev, goal) {
+        const row = ev.currentTarget;   // capture now - the event nulls currentTarget after dispatch
+        setTimeout(() => {
+          if (row.contains(document.activeElement)) return;
+          goal.addingSubtask = false;
+          delete this.subtaskDrafts[goal.id];
+        }, 100);
+      },
       logHours(date, gi, val) {
+        if (this.isReadonly(date)) return;
         this.goals[date][gi].loggedHours = parseFloat(val) || 0;
         this.save();
       },
-      deleteGoal(date, gi) { this.goals[date].splice(gi, 1); this.save(); },
+      // Log actual time from the hours + minutes fields on a completed goal.
+      logHM(date, gi, h, m) {
+        if (this.isReadonly(date)) return;
+        this.goals[date][gi].loggedHours = this.hmToHours(h, m);
+        this.save();
+      },
+      deleteGoal(date, gi) { if (this.isReadonly(date)) return; this.goals[date].splice(gi, 1); this.save(); },
+
+      // ---- Drag-to-reorder ----
+      // Order is just array order, so reordering is a splice-out + splice-in + save().
+      // Goals reorder within the selected day; subtasks reorder within their own goal.
+      moveGoal(from, to) {
+        if (this.isReadonly(this.selectedDate)) return;
+        if (from == null || to == null || from === to) return;
+        const list = this.goals[this.selectedDate];
+        if (!list || from < 0 || to < 0 || from >= list.length || to >= list.length) return;
+        const [item] = list.splice(from, 1);
+        list.splice(to, 0, item);
+        this.save();
+      },
+      moveSubtask(goal, from, to) {
+        if (this.isReadonly(this.selectedDate)) return;
+        if (from == null || to == null || from === to) return;
+        const subs = goal.subtasks;
+        if (!subs || from < 0 || to < 0 || from >= subs.length || to >= subs.length) return;
+        const [item] = subs.splice(from, 1);
+        subs.splice(to, 0, item);
+        this.save();
+      },
+      resetDrag() {
+        this.dragGoalIndex = null;
+        this.dragOverGoalIndex = null;
+        this.dragSubGoalId = null;
+        this.dragSubIndex = null;
+        this.dragOverSubIndex = null;
+      },
 
       // ---- Inline goal editing ----
       // Live edits: the template binds title/hours/subtask text straight to the goal
       // via x-model, so every keystroke mutates state and the debounced save() persists it.
-      startEditGoal(goal) { this.editingGoalId = goal.id; },
+      startEditGoal(goal) { if (this.isReadonly(this.selectedDate)) return; this.editingGoalId = goal.id; },
       stopEditGoal(goal) {
         goal.topic = this.cleanText(goal.topic);
         const h = parseFloat(goal.hours);
@@ -383,6 +526,7 @@
         this.save();
       },
       removeSubtask(date, gi, si) {
+        if (this.isReadonly(date)) return;
         const goal = this.goals[date][gi];
         goal.subtasks.splice(si, 1);
         // Recompute completion from what remains; don't let an emptied list flip the goal complete.
@@ -433,28 +577,78 @@
       },
 
       // ---- Backlog ----
+      // Manual defer of a *current-day* goal. Past days are read-only and carried
+      // automatically (autoCarryPastDays), so this only ever runs for today/future.
+      // Habits are never carried automatically, but the user CAN move a habit instance
+      // here by hand - we detach it from its template (drop recurringId) so it becomes
+      // an independent catch-up task; otherwise rescheduling it could collide with a
+      // fresh instance that ensureRecurring seeds on the target day.
       moveToBacklog(date, gi) {
+        if (this.isReadonly(date)) return;
         const goal = this.goals[date].splice(gi, 1)[0];
+        if (goal.recurringId) delete goal.recurringId;
         goal.originalDate = goal.createdAt || date;
         goal.backlognedAt = this.today;
         goal.addingSubtask = false;
         this.backlog.unshift(goal);
         this.save();
       },
-      endOfDay() {
-        const goals = this.goals[this.selectedDate] || [];
-        // Daily habits are never backlogged - a missed habit just stays missed for that day.
-        const toBacklog = goals.filter(g => !g.completed && !g.recurringId);
-        if (toBacklog.length === 0) { alert("Nothing to carry over - habits aside, you're all caught up! 🎉"); return; }
-        if (!confirm(`Move ${toBacklog.length} unfinished goal(s) to your backlog? (Daily habits stay put.)`)) return;
-        this.goals[this.selectedDate] = goals.filter(g => g.completed || g.recurringId);
-        toBacklog.forEach(g => {
-          g.originalDate = g.createdAt || this.selectedDate;
-          g.backlognedAt = this.today;
-          g.addingSubtask = false;
-          this.backlog.unshift(g);
-        });
-        this.save();
+      // Automatic carry-over. On load we sweep every past day that hasn't been swept
+      // yet (those after the `carriedThrough` watermark and before today) and copy the
+      // unfinished remainder of each non-habit goal into the backlog. The source goal
+      // is left in place - only flagged `carried` - so the day's true score is
+      // preserved and the user can see what slipped; the backlog copy is a fresh,
+      // independent item, so finishing it never rewrites history.
+      //
+      // Two layers keep a task from being carried twice: the `carriedThrough`
+      // watermark skips whole days already processed, and the per-goal `carried` flag
+      // guards individual goals (e.g. after importing older data). After the sweep the
+      // watermark advances to yesterday - today is still live and is never carried.
+      autoCarryPastDays() {
+        const from = this.carriedThrough || '';   // exclusive lower bound; '' = sweep all history
+        let changed = false;
+        for (const date of Object.keys(this.goals)) {
+          if (!this.isReadonly(date)) continue;              // today/future: not carried
+          if (from && date <= from) continue;                // already swept in a prior run
+          for (const g of (this.goals[date] || [])) {
+            if (g.recurringId) continue;                     // habits are never carried
+            if (g.completed || g.carried) continue;          // done, or already carried
+            const copy = this.carryCopy(g, date);
+            if (copy) this.backlog.unshift(copy);
+            g.carried = true;                                // freeze: never carry this again
+            changed = true;
+          }
+        }
+        // Advance the watermark to yesterday: everything through yesterday is now swept.
+        const y = new Date(this.today + 'T00:00:00');
+        y.setDate(y.getDate() - 1);
+        const yesterday = this.dateStr(y);
+        if (yesterday && (!this.carriedThrough || yesterday > this.carriedThrough)) {
+          this.carriedThrough = yesterday;
+          changed = true;
+        }
+        if (changed) this.save();
+      },
+      // Build an independent backlog copy of a goal's unfinished remainder: the goal
+      // heading plus only its incomplete subtasks, all with fresh ids. Returns null
+      // when there is nothing left to carry (a goal left unchecked but whose every
+      // subtask is done) - we still flag such a goal carried, we just add nothing.
+      carryCopy(g, date) {
+        const subs = g.subtasks || [];
+        const pending = subs.filter(s => !s.completed);
+        if (subs.length && pending.length === 0) return null;
+        return {
+          id: this.uid(),
+          topic: g.topic,
+          hours: g.hours || 1,
+          loggedHours: null,
+          completed: false,
+          subtasks: pending.map(s => ({ id: this.uid(), text: s.text, completed: false })),
+          createdAt: date,
+          originalDate: g.createdAt || date,
+          backlognedAt: this.today,
+          addingSubtask: false,
+        };
       },
       scheduleFromBacklog(idx, date) {
         if (!date) return;
@@ -524,7 +718,8 @@
         this.editingId = h.id;
         this.newHabit = {
           topic: h.topic,
-          hours: h.hours,
+          hours: this.hoursPart(h.hours),
+          minutes: this.minsPart(h.hours),
           subtasksText: (h.subtasks || []).map(s => s.text).join('\n'),
           days: [...(h.days || [0,1,2,3,4,5,6])],
         };
@@ -544,7 +739,7 @@
       submitHabit() {
         const topic = this.newHabit.topic.trim();
         if (!topic || this.newHabit.days.length === 0) return;
-        const hours = this.newHabit.hours || 0.5;
+        const hours = this.hmToHours(this.newHabit.hours, this.newHabit.minutes) || 0.5;
         const subtasks = this.newHabit.subtasksText.split('\n').map(s => s.trim()).filter(Boolean).map(text => ({ text }));
         const days = [...this.newHabit.days].sort((a,b) => a-b);
         if (this.editingId) {
@@ -575,7 +770,7 @@
         inst.hours = hours;
         if (!touched) inst.subtasks = subtasks.map(s => ({ id: this.uid(), text: s.text, completed: false }));
       },
-      resetNewHabit() { this.newHabit = { topic: '', hours: 0.5, subtasksText: '', days: [0,1,2,3,4,5,6] }; },
+      resetNewHabit() { this.newHabit = { topic: '', hours: 0, minutes: 30, subtasksText: '', days: [0,1,2,3,4,5,6] }; },
       deleteHabit(idx) {
         if (!confirm('Stop this habit? Days already logged keep their record.')) return;
         this.recurring.splice(idx, 1);
