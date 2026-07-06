@@ -579,14 +579,12 @@
       // ---- Backlog ----
       // Manual defer of a *current-day* goal. Past days are read-only and carried
       // automatically (autoCarryPastDays), so this only ever runs for today/future.
-      // Habits are never carried automatically, but the user CAN move a habit instance
-      // here by hand - we detach it from its template (drop recurringId) so it becomes
-      // an independent catch-up task; otherwise rescheduling it could collide with a
-      // fresh instance that ensureRecurring seeds on the target day.
+      // Habits are day-bound and never transferable: a missed habit just stays
+      // unfinished on its day, and the next day gets its own instance.
       moveToBacklog(date, gi) {
         if (this.isReadonly(date)) return;
+        if ((this.goals[date][gi] || {}).recurringId) return;   // habits are never backlogged
         const goal = this.goals[date].splice(gi, 1)[0];
-        if (goal.recurringId) delete goal.recurringId;
         goal.originalDate = goal.createdAt || date;
         goal.backlognedAt = this.today;
         goal.addingSubtask = false;

@@ -638,13 +638,12 @@ function coreSuite() {
     check('moveToBacklog stamps originalDate', a.backlog[0].originalDate === TODAY);
     check('moveToBacklog removes from the day', (a.goals[TODAY] || []).length === 0);
 
-    // A habit instance CAN be moved to the backlog by hand, and is detached from its template.
+    // Habits are day-bound: they are never transferable to the backlog, by hand or otherwise.
     const h = makeApp();
     const habitInst = seedGoal(h, { topic: 'Meditate', completed: false, recurringId: 'r1' });
     h.moveToBacklog(TODAY, h.goals[TODAY].indexOf(habitInst));
-    check('moveToBacklog can move a habit instance by hand', h.backlog.length === 1 && h.backlog[0].topic === 'Meditate');
-    check('moveToBacklog detaches the habit (drops recurringId)', !('recurringId' in h.backlog[0]));
-    check('moveToBacklog removes the habit instance from the day', (h.goals[TODAY] || []).length === 0);
+    check('moveToBacklog refuses a habit instance', h.backlog.length === 0);
+    check('moveToBacklog leaves the habit on its day', (h.goals[TODAY] || []).length === 1 && h.goals[TODAY][0].recurringId === 'r1');
 
     // (Past-day carry-over lives in featureSuite: autoCarryPastDays copies unfinished
     // work without emptying or inflating the past day - the endOfDay flow was removed.)

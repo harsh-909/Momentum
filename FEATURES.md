@@ -35,7 +35,7 @@ The main workspace for a single day's goals.
 - **Reorder by dragging** - drag the grip handle (⠿) to reorder goals up or down within the day, and to reorder subtasks within their own goal. Mouse/desktop only.
 - **Edit a goal** - open inline edit (✎) to rewrite the title, adjust planned time (hours + minutes), and edit or remove subtasks in auto-growing text fields. Blank lines are trimmed and emptied subtasks dropped on save (✓ Done), while subtask completion is preserved. Works on habit-derived goals too.
 - **Log actual time** - once a goal is complete you can record how long it actually took, in hours + minutes, separate from the planned estimate.
-- **Move to backlog** - manually send a single unfinished goal (on today) to the backlog. Works for habit-generated goals too: moving one detaches it from its template so it becomes an independent catch-up task (habits are never carried *automatically*, only by hand).
+- **Move to backlog** - manually send a single unfinished goal (on today) to the backlog. Not available for habit-generated goals: habits are day-bound, so a missed habit just stays unfinished for that day rather than being carried anywhere.
 - **Empty state** - shows an encouraging prompt that changes between day and evening.
 - **Future-day hint** - viewing a future date shows which habits are scheduled to appear that day (habits are only materialized when the day actually arrives).
 - **Read-only past days** - once a day is in the past it becomes a frozen record: goals and subtasks can no longer be toggled, added, edited, deleted, reordered, or logged. A 🔒 notice explains this, so a past day's score always reflects what actually happened.

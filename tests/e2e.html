@@ -198,18 +198,17 @@
     // 12. CURRENT FEATURE: read-only past days + automatic carry-over.
     comp.activeTab = 'today';
 
-    // Habit instances are never auto-carried, but CAN be moved to the backlog by hand.
+    // Habits are day-bound: no move-to-backlog button, and moveToBacklog refuses them.
     comp.goals[comp.today] = [{ id: 'hab1', topic: 'HabitInst', hours: 1, loggedHours: null,
       completed: false, subtasks: [], createdAt: comp.today, addingSubtask: false, recurringId: 'rX' }];
     await sleep(120);
     const habitCard = q('.goal-card');
-    const backlogBtn = habitCard && habitCard.querySelector('button[title^="Move to backlog"]');
-    rec('habit: move-to-backlog button is available on a habit instance', !!backlogBtn);
-    if (backlogBtn) backlogBtn.click();
-    await sleep(100);
-    rec('habit: manual move detaches the template (drops recurringId)',
-        comp.backlog.some(b => b.topic === 'HabitInst' && !('recurringId' in b)));
-    rec('habit: instance removed from today after manual move', (comp.goals[comp.today] || []).length === 0);
+    const backlogBtn = habitCard && habitCard.querySelector('button[title="Move to backlog"]');
+    rec('habit: no move-to-backlog button on a habit instance', !backlogBtn || backlogBtn.offsetParent === null);
+    comp.moveToBacklog(comp.today, 0);   // even called directly it must refuse
+    await sleep(80);
+    rec('habit: moveToBacklog refuses a habit instance', comp.backlog.every(b => b.topic !== 'HabitInst'));
+    rec('habit: instance stays on its day', (comp.goals[comp.today] || []).some(g => g.recurringId === 'rX'));
 
     const past = '2020-01-01';   // safely before today
     comp.goals[past] = [
@@ -242,15 +241,16 @@
 
     // Navigate to the past day and confirm the UI is read-only.
     comp.selectedDate = past;
-    await sleep(150);
+    // Wait for x-show to actually hide the add-goal form (avoids a fixed-sleep race).
+    // "Hidden" = laid out with zero client rects; getClientRects is reliable here, offsetParent isn't.
+    const hidden = (el) => !el || el.getClientRects().length === 0;
+    const findAddToggle = () => Array.from(doc().querySelectorAll('button')).find(b => /add a goal/i.test(b.textContent));
+    await waitFor(() => hidden(findAddToggle()), 3000);
     rec('readonly: read-only notice shown on a past day',
         Array.from(doc().querySelectorAll('*')).some(el => el.children.length === 0 && /read-only record/i.test(el.textContent)));
-    // x-show only sets display:none, so assert the controls are not *visible* (offsetParent === null), not absent from the DOM.
-    const addToggle = Array.from(doc().querySelectorAll('button')).find(b => /add a goal/i.test(b.textContent));
-    rec('readonly: add-goal form hidden on a past day', !addToggle || addToggle.offsetParent === null);
+    rec('readonly: add-goal form hidden on a past day', hidden(findAddToggle()));
     const editBtnPast = q('button[title="Edit goal"]'), delBtnPast = q('button[title="Delete"]');
-    rec('readonly: goal action buttons (edit/delete) hidden',
-        (!editBtnPast || editBtnPast.offsetParent === null) && (!delBtnPast || delBtnPast.offsetParent === null));
+    rec('readonly: goal action buttons (edit/delete) hidden', hidden(editBtnPast) && hidden(delBtnPast));
     const pastChk = q('.goal-card button.chk-btn');
     rec('readonly: goal checkbox is disabled', !!pastChk && pastChk.disabled === true);
     rec('readonly: carried badge visible on the carried goal',
