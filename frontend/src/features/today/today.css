@@ -1,0 +1,38 @@
+/*
+ * Today feature styles: list entry animation and the hover-revealed action
+ * rail. The global prefers-reduced-motion rule in theme.css already clamps
+ * these animations/transitions.
+ */
+
+@keyframes today-goal-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.goal-enter {
+  animation: today-goal-enter 200ms var(--ease-click) both;
+}
+
+/* Action rail: hidden until the card is hovered or focused; always visible
+   on touch devices (no hover to reveal it). */
+.goal-actions {
+  opacity: 0;
+  transition: opacity 150ms var(--ease-click);
+}
+
+.goal-card:hover .goal-actions,
+.goal-card:focus-within .goal-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .goal-actions {
+    opacity: 1;
+  }
+}

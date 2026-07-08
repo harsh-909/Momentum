@@ -1,0 +1,16 @@
+{
+  "name": "momentum",
+  "private": true,
+  "version": "2.0.0",
+  "description": "Root scripts for running both halves of Momentum 2.0 in dev.",
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "cd backend && .venv\\Scripts\\python -m uvicorn app.main:app --reload --port 8000",
+    "dev:web": "cd frontend && npm run dev",
+    "test": "npm --prefix frontend run test && npm run test:api",
+    "test:api": "cd backend && .venv\\Scripts\\python -m pytest"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

@@ -1,0 +1,102 @@
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useAppStore } from '../../store/useAppStore'
+import { GoalList } from './GoalList'
+import { TODAY, makeGoal, seedStore } from './testUtils'
+import type { Goal } from '../../types/domain'
+
+vi.mock('../../lib/confetti', () => ({ celebrate: vi.fn() }))
+import { celebrate } from '../../lib/confetti'
+
+const initialState = useAppStore.getState()
+
+afterEach(() => {
+  useAppStore.setState(initialState, true)
+  vi.unstubAllGlobals()
+  vi.mocked(celebrate).mockClear()
+})
+
+/** Render one goal through GoalList so dnd-kit context is real. */
+function renderGoal(goal: Goal, opts: Parameters<typeof seedStore>[0] = {}, readonly = false) {
+  seedStore({ goals: { [TODAY]: [goal] }, ...opts })
+  return render(<GoalList date={TODAY} goals={[goal]} readonly={readonly} />)
+}
+
+describe('GoalCard actions', () => {
+  it('hides the move-to-backlog button for habit-derived goals', () => {
+    renderGoal(makeGoal({ recurringId: 'habit-1' }))
+    expect(screen.queryByTitle('Move to backlog')).not.toBeInTheDocument()
+    expect(screen.getByText('habit')).toBeInTheDocument()
+  })
+
+  it('moves a plain goal to the backlog', async () => {
+    const moveToBacklog = vi.fn()
+    const goal = makeGoal()
+    renderGoal(goal, { actions: { moveToBacklog } })
+    await userEvent.click(screen.getByTitle('Move to backlog'))
+    expect(moveToBacklog).toHaveBeenCalledWith(TODAY, goal.id)
+  })
+
+  it('disables the checkbox and hides the action rail when readonly', () => {
+    renderGoal(makeGoal({ topic: 'Frozen' }), {}, true)
+    expect(screen.getByRole('checkbox', { name: 'Frozen' })).toBeDisabled()
+    expect(screen.queryByTitle('Edit goal')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Delete')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Move to backlog')).not.toBeInTheDocument()
+  })
+
+  it('deletes only after confirmation', async () => {
+    const deleteGoal = vi.fn()
+    const goal = makeGoal()
+    const confirmFn = vi.fn().mockReturnValue(false)
+    vi.stubGlobal('confirm', confirmFn)
+    renderGoal(goal, { actions: { deleteGoal } })
+
+    await userEvent.click(screen.getByTitle('Delete'))
+    expect(confirmFn).toHaveBeenCalled()
+    expect(deleteGoal).not.toHaveBeenCalled()
+
+    confirmFn.mockReturnValue(true)
+    await userEvent.click(screen.getByTitle('Delete'))
+    expect(deleteGoal).toHaveBeenCalledWith(TODAY, goal.id)
+  })
+
+  it('enters edit mode via the edit button', async () => {
+    const setEditingGoal = vi.fn()
+    const goal = makeGoal()
+    renderGoal(goal, { actions: { setEditingGoal } })
+    await userEvent.click(screen.getByTitle('Edit goal'))
+    expect(setEditingGoal).toHaveBeenCalledWith(goal.id)
+  })
+
+  it('toggles completion and celebrates when the goal just completed', async () => {
+    const toggleGoal = vi.fn()
+    const goal = makeGoal({ topic: 'Run' })
+    renderGoal(goal, { actions: { toggleGoal } })
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Run' }))
+    expect(toggleGoal).toHaveBeenCalledWith(TODAY, goal.id)
+    expect(celebrate).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not celebrate when un-completing', async () => {
+    const toggleGoal = vi.fn()
+    const goal = makeGoal({ topic: 'Run', completed: true })
+    renderGoal(goal, { actions: { toggleGoal } })
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Run' }))
+    expect(toggleGoal).toHaveBeenCalledWith(TODAY, goal.id)
+    expect(celebrate).not.toHaveBeenCalled()
+  })
+
+  it('swaps in the edit form when this goal is being edited', async () => {
+    const stopEditGoal = vi.fn()
+    const setEditingGoal = vi.fn()
+    const goal = makeGoal({ topic: 'Edit me' })
+    renderGoal(goal, { editingGoalId: goal.id, actions: { stopEditGoal, setEditingGoal } })
+
+    expect(screen.getByLabelText('Goal title')).toHaveValue('Edit me')
+    await userEvent.click(screen.getByRole('button', { name: /done/i }))
+    expect(stopEditGoal).toHaveBeenCalledWith(TODAY, goal.id)
+    expect(setEditingGoal).toHaveBeenCalledWith(null)
+  })
+})

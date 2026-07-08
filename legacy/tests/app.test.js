@@ -122,6 +122,24 @@ function featureSuite() {
     check('dayStats planned total (2h)', s.dayStats().hours === 2);
     check('dayStats logged total sums subtask time (1.5)', s.dayStats().doneHours === 1.5);
   }
+
+  // Logged time counts as soon as it is logged - a goal does NOT have to be
+  // fully complete for its subtasks' logged time to reach the day/metrics totals.
+  {
+    const s = makeApp();
+    seedGoal(s, { hours: 3, completed: false, subtasks: [
+      { id: 'q1', text: 'a', completed: true, loggedHours: 0.75 },
+      { id: 'q2', text: 'b', completed: false, loggedHours: null },
+    ]});
+    s.recomputeGoalLogged(s.goals[s.selectedDate][0]);
+    check('partial goal: logged subtask time counts in dayStats (0.75)', s.dayStats().doneHours === 0.75, 'doneHours=' + s.dayStats().doneHours);
+    check('partial goal: logged subtask time counts in metrics hours (0.8)', s.metrics().totalHours === 0.8, 'totalHours=' + s.metrics().totalHours);
+
+    // An untouched incomplete goal must still contribute nothing - the
+    // planned-hours fallback applies only to fully completed goals.
+    seedGoal(s, { hours: 5, completed: false, subtasks: [] });
+    check('incomplete goal with nothing logged contributes 0', s.dayStats().doneHours === 0.75, 'doneHours=' + s.dayStats().doneHours);
+  }
 }
 
 // ============================================================

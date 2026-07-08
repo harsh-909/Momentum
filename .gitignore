@@ -16,3 +16,14 @@ userData/
 Thumbs.db
 desktop.ini
 
+# Momentum 2.0 toolchain
+node_modules/
+frontend/dist/
+**/.env
+**/.env.local
+backend/.venv/
+backend/dev.db
+backend/test.db
+.pytest_cache/
+coverage/
+

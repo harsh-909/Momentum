@@ -4,60 +4,62 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-"Momentum" - a daily-goals / habit tracker. The **UI is a single file: `index.html`**, paired with a tiny local backend `server.py`.
-There is no build step, no package manager, and no tests. The app is **fully offline** - all frontend dependencies are vendored in `vendor/` (pinned copies; do not point back to CDNs):
+"Momentum" - a daily-goals / habit tracker.
+This branch (`momentum-2.0`) is the full rewrite: `frontend/` (React 19 + Vite + TypeScript + Tailwind v4 + Zustand) and `backend/` (FastAPI + SQLAlchemy 2 async + Alembic).
+The 1.x single-file Alpine app still runs from the `main` branch; `legacy/` here is a frozen read-only reference for the engine port - never edit it.
+`CONTRACT.md` pins the wire contract (API routes/shapes) and the engine function signatures; keep it in sync with any signature change.
+`userData/` holds real personal data, is gitignored, and must never be committed or moved.
 
-- **Alpine.js 3.14.9** (`vendor/alpine.min.js`) - reactivity (`x-data`, `x-model`, `x-for`, `x-show`, `$watch`, `$nextTick`). The whole app is one Alpine component returned by the `app()` factory in the `<script>` block.
-- **Tailwind CSS 3.4.16 Play build** (`vendor/tailwind.js`, in-browser JIT) plus a custom `<style>` block for the aurora background, glass morphism, confetti, and CSS variables (`--bg`, `--accent`, etc.). It logs a "not for production" console warning - expected and fine for this personal, local-only app.
-- **Chart.js 4.4.0** (`vendor/chart.umd.min.js`) - the three canvases on the Momentum tab, rendered lazily in `renderCharts()`.
-- **Fonts** (Plus Jakarta Sans, Fraunces) - self-hosted woff2 files under `vendor/fonts/` with `vendor/fonts/fonts.css` (URLs already rewritten to relative paths).
+## Commands
 
-## Running it
+- `npm run dev` (repo root) - API on :8000 (SQLite `backend/dev.db`) + Vite on :5173 with `/api` proxied. No cloud DB needed locally.
+- `cd frontend && npx vitest run` - frontend tests. `npx tsc -b --noEmit` - typecheck. `npm run build` - production build.
+- `cd backend && .venv/Scripts/python -m pytest` - backend tests.
+- `cd backend && .venv/Scripts/python scripts/smoke_e2e.py` - wire-level smoke (start the API first).
+- Backend venv lives at `backend/.venv`; always invoke it explicitly (`.venv/Scripts/python`), never assume an activated shell.
+- Alembic: `cd backend && .venv/Scripts/python -m alembic upgrade head` (SQLite dev never needs it - tables auto-create on startup).
 
-Two ways:
+## Architecture
 
-- **Like an app (what the user does):** double-click `Momentum.pyw`. It runs under `pythonw` (no console), starts the server invisibly, and opens the browser at `http://localhost:8899`. If the server is already running it just opens a tab. The app is stopped from the UI's power button (⏻), which POSTs `/api/quit` -> `server.shutdown()` -> process exits.
-- **For development:** `python server.py` (optional port arg, default 8899) - same server, but with a console for logs and Ctrl+C.
+### Where logic lives (the most important rule)
 
-The backend is stdlib only (no dependencies); it serves the app **and** the persistence API. Do **not** use `python -m http.server` - that serves the static files but not the `/api/*` routes, so login and saving break. The `.claude/launch.json` "app" config runs `python server.py 8899`.
+ALL business logic is in `frontend/src/lib/engine/` - pure, framework-free TypeScript modules (time, dates, scoring, goals, backlog, carryover, habits, metrics, copy, validate) operating on the `Snapshot` type.
+Engine functions mutate a passed snapshot in place (they run inside immer drafts), take `today` as a parameter, and never call `Date.now()` internally.
+The Zustand store (`src/store/useAppStore.ts`) is thin: actions are two-line wrappers that call an engine function and mark the store dirty.
+UI components dispatch store actions and compute derived values by calling engine functions directly.
+New behavior goes in the engine with unit tests first, then gets a thin store action, then UI.
 
-## Architecture (the parts that span the file)
+### Persistence
 
-### Client <-> server persistence
+The whole app state is ONE JSON document per user (the `Snapshot` in `src/types/domain.ts` - same shape as v1 `userData/<name>.json`, keep import compatibility).
+`src/store/persistence.ts` debounces saves 400ms, drives the save-status chip, flushes with `fetch keepalive` on pagehide, and adopts the server doc on a 409.
+The backend stores it opaquely in a JSONB column with an integer-version compare-and-swap (`PUT /api/data {version, data}`); the server never reads inside the doc.
+Auth is argon2id + opaque Bearer session tokens (localStorage); the username regex `^[a-z0-9][a-z0-9_-]{0,31}$` must stay identical in `frontend/src/types/domain.ts` and `backend/app/models.py`.
 
-State lives in the Alpine component and is persisted **per user** to `userData/<username>.json` via `server.py`. There is no database and nothing leaves the machine.
+### Domain invariants (preserve these when editing)
 
-- `server.py` (Python stdlib `http.server`) serves static files from the project root and exposes four JSON routes:
-  - `GET /api/users` -> `["harsh", ...]` (filenames in `userData/`, minus `.json`)
-  - `GET /api/load?user=<name>` -> that user's saved object, or `404` if new
-  - `POST /api/save` `{username, data}` -> writes `userData/<username>.json` **atomically** (temp file + `os.replace`)
-  - `POST /api/quit` -> replies `{ok: true}`, then shuts the server down (used by the header power button; how the invisible `Momentum.pyw` instance gets stopped)
-- **Usernames are the identity and the filename.** They're validated by the SAME regex on both sides - JS `normalizeUsername()` and Python `normalize_username()` / `USERNAME_RE`: `^[a-z0-9][a-z0-9_-]{0,31}$`, lowercased. This is the path-traversal guard; keep the two in sync if you change it.
-- The saved object shape (`snapshot()` in the client) is `{ username, install, updatedAt, goals, backlog, recurring, seeded }`.
+- Dates are `YYYY-MM-DD` strings in state, never Date objects; parse via `parseLocalDate` (`+ 'T00:00:00'`). The logical day starts at 3am (`currentDay`).
+- Time is stored as decimal hours; h+m is UI-only (`HmInput`, `fmtDuration` - never renders "60m").
+- Partial credit: `dayProgressPct` caps at 99 unless every goal is complete; streak needs >= 70% and a zero-goal day breaks it.
+- Habits are templates (`recurring`), seeded ONLY on today by `ensureRecurring`, gated by weekday/startDate/`seeded` registry; day-bound - never carried over, never movable to backlog.
+- Carry-over (`sweepPastDays`) copies incomplete non-habit remainders to backlog exactly once (watermark `carriedThrough` + per-goal `carried` flag).
+- Goal <-> subtask coupling: completing a goal checks all subtasks; all-subtasks-done completes the goal; adding a subtask un-completes it; subtask logged time rolls up to `goal.loggedHours` (null when 0).
+- Past days are read-only: engine mutators guard via `isReadonly(date, today)` AND the UI hides/disables the controls.
 
-Saving is **debounced** (`save()` -> 400ms -> `flushNow()`), so every mutation still just calls `this.save()` as before - it no longer writes synchronously. `flushNow()` drives the header save indicator (`saveStatus`: idle/saving/saved/error; error is click-to-retry). A `beforeunload` handler calls `beacon()` (`navigator.sendBeacon`) so a pending debounced change isn't lost on tab close. New profiles are created by `login()` calling `flushNow()` immediately so the file exists.
+### Design system ("Instrument")
 
-`login(name)` loads or creates a profile and only then sets `loggedIn = true`; `logout()` flushes and returns to the modal. **Alpine `$watch`es are registered once in `init()`, not in `login()`**, so repeated logout/login cycles don't stack duplicate watchers - they no-op while `loggedIn` is false.
-
-Import/Export (`exportData()` / `importData()`) round-trips the same `snapshot()` shape as a downloadable/uploadable JSON file; import replaces the current profile and immediately `flushNow()`s.
-
-**Dates are strings, never Date objects, in state.** Always `YYYY-MM-DD` via `dateStr()`. When you need a real Date, parse with `new Date(str + 'T00:00:00')` (local midnight - avoids UTC off-by-one). Follow this pattern; mixing raw `new Date(str)` will introduce timezone bugs.
-
-**Habits are templates, not stored instances.** A habit in `recurring` is materialized into a day's goal list on demand by `ensureRecurring(date)`, which only ever seeds **today** (never past or future days, even on navigation), only on weekdays in the habit's `days` array, and records the placement in `seeded` so a deleted instance never reappears. Materialized goals carry a `recurringId` back-reference. Consequences to preserve when editing:
-- `autoCarryPastDays()` never carries habits (`recurringId` goals are skipped).
-- `syncHabitToToday()` propagates a template edit onto today's instance *only if untouched/incomplete*, and pulls the instance out if it's no longer scheduled today.
-- Habits are day-bound and never transferable to the backlog: the "move to backlog" button is hidden for habit-derived goals, and `moveToBacklog()` refuses `recurringId` goals. A missed habit just stays unfinished for its day.
-
-**Goal <-> subtask completion coupling:** toggling a goal complete marks all subtasks complete (`toggleGoal`); toggling subtasks recomputes the parent's `completed` as "every subtask done" (`toggleSubtask`); adding a subtask un-completes the parent.
-
-**Tabs** (`today` / `backlog` / `habits` / `history` / `metrics`) are all rendered in one DOM, gated by `x-show` on `activeTab`. Metrics charts render only when that tab is opened (via the `$watch('activeTab', ...)` in `init`), and each render destroys the previous Chart instance to avoid leaks.
-
-Metrics are computed on the fly from `dg_goals` over rolling windows: `getLast7Days()`, `getLast4Weeks()`, `metrics()` (streak, 7-day avg, logged hours, goal count). `loggedHours ?? hours` is the recurring pattern - planned hours are the fallback until the user logs actuals.
+Tokens live in `frontend/src/styles/theme.css` (Tailwind v4 `@theme`; `.dark` class overrides).
+Flat instrument-panel look: hairline borders, radius tokens (card 10 / btn 8 / badge 6), no glassmorphism, no shadows except overlays.
+Orange (`--color-accent`) is rationed: dial sweep, active tab, primary buttons, streak. Grades use good/warn/alert only.
+All numerals render in IBM Plex Mono (`.font-mono-num`); display type is Archivo (`.font-display`); icons are hand-drawn thin-stroke SVGs, never emoji.
+Motion uses `--ease-click` (120-160ms) and `--ease-sweep` (400ms) and must respect `prefers-reduced-motion`.
 
 ## Conventions
 
-- IDs come from `uid()` (`Math.random` + timestamp). Keep using it for new goals/subtasks/habits.
-- UI copy is time-of-day aware via `isEvening()` / `greeting()` - "add a goal for tomorrow" in the evening, etc.
-- Prefer editing the existing `index.html` over splitting the UI into multiple files unless there is an pragmatic requirement to split things; the zero-build frontend is intentional. Keep `server.py` dependency-free (stdlib only).
+- IDs come from `uid()` in `src/lib/id.ts`.
+- Colocate tests next to the module (`foo.test.ts`); engine test fixtures live in `src/lib/engine/testFactories.ts`.
+- Backend error bodies are top-level `{"error": "<machine_code>"}`; routes return `JSONResponse` for errors, Pydantic models for success.
+- Keep `backend/app/db.py` and `backend/migrations/versions/` in sync when touching the schema (new Alembic revision, never edit an applied one).
+- The deployed API must never grow a user-enumeration endpoint or `/api/quit` (v1 leftovers - see CONTRACT.md).
 
 Dont commit untill I ask explicity to do that.

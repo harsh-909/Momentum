@@ -808,12 +808,21 @@
       },
 
       // ---- Day stats ----
+      // Actual time a goal has earned so far. Logged time (whole-goal, or rolled up
+      // from completed subtasks) counts even while the goal is only partially done;
+      // the planned-hours fallback applies only once the goal is fully complete, so
+      // an untouched goal never counts its plan as done time.
+      goalDoneHours(g) {
+        const logged = parseFloat(g.loggedHours);
+        if (Number.isFinite(logged)) return logged;
+        return g.completed ? (parseFloat(g.hours) || 0) : 0;
+      },
       dayStats() {
         const gs = this.goalsForDate(this.selectedDate);
         const completed = gs.filter(g => g.completed).length;
         const total = gs.length;
         const hours = gs.reduce((s, g) => s + (parseFloat(g.hours) || 0), 0);
-        const doneHours = gs.filter(g => g.completed).reduce((s, g) => s + (parseFloat(g.loggedHours ?? g.hours) || 0), 0);
+        const doneHours = gs.reduce((s, g) => s + this.goalDoneHours(g), 0);
         const pct = this.dayProgressPct(gs);
         return { completed, total, hours: +hours.toFixed(2), doneHours: +doneHours.toFixed(2), pct };
       },
@@ -878,7 +887,7 @@
         const activePcts = days.filter(d => (this.goals[d] || []).length > 0)
           .map(d => this.dayProgressPct(this.goals[d]));
         const avgWeek = activePcts.length ? Math.round(activePcts.reduce((a, b) => a + b, 0) / activePcts.length) : 0;
-        const totalHours = days.reduce((s, d) => s + (this.goals[d] || []).filter(g=>g.completed).reduce((ss, g) => ss + (parseFloat(g.loggedHours ?? g.hours) || 0), 0), 0);
+        const totalHours = days.reduce((s, d) => s + (this.goals[d] || []).reduce((ss, g) => ss + this.goalDoneHours(g), 0), 0);
         const totalGoals = days.reduce((s, d) => s + (this.goals[d] || []).length, 0);
         return { streak, avgWeek, totalHours: +totalHours.toFixed(1), totalGoals };
       },
@@ -920,7 +929,7 @@
           options: { ...DEF, scales: { ...DEF.scales, y: { ...DEF.scales.y, min: 0, max: 100, ticks: { ...DEF.scales.y.ticks, callback: v => v + '%' } } } },
         });
 
-        const hoursData = days.map(d => (this.goals[d] || []).filter(g=>g.completed).reduce((s, g) => s + (parseFloat(g.loggedHours ?? g.hours) || 0), 0));
+        const hoursData = days.map(d => (this.goals[d] || []).reduce((s, g) => s + this.goalDoneHours(g), 0));
         if (this._charts.hours) this._charts.hours.destroy();
         const hc = document.getElementById('hoursChart');
         if (hc) this._charts.hours = new Chart(hc, {
