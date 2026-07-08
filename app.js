@@ -25,9 +25,6 @@
       // never carried twice (see autoCarryPastDays). '' means "nothing swept yet".
       carriedThrough: '',
       newGoal: { topic: '', hours: 1, minutes: 0, subtasksText: '' },
-      // Transient "new subtask" input text, keyed by goal id. Intentionally NOT
-      // part of snapshot() - half-typed drafts must never be persisted to disk.
-      subtaskDrafts: {},
       newHabit: { topic: '', hours: 0, minutes: 30, subtasksText: '', days: [0,1,2,3,4,5,6] },
       habitFormOpen: false,
       editingId: null,
@@ -90,6 +87,12 @@
         });
         // Best-effort flush if the tab is closed with an unsaved change pending.
         window.addEventListener('beforeunload', () => this.beacon());
+        // Time (number) inputs must not change on mouse-wheel while focused - only via
+        // typing. Delegated so it also covers the dynamically-added per-subtask fields.
+        document.addEventListener('wheel', (e) => {
+          const t = e.target;
+          if (t && t.tagName === 'INPUT' && t.type === 'number' && document.activeElement === t) e.preventDefault();
+        }, { passive: false });
         // The app is meant to run continuously, so notice a new day live (not only on reload).
         this.startDayWatcher();
       },
@@ -410,7 +413,7 @@
       addGoal() {
         if (this.isReadonly(this.selectedDate)) return;
         if (!this.newGoal.topic.trim()) return;
-        const subtasks = this.newGoal.subtasksText.split('\n').map(s => s.trim()).filter(Boolean).map(text => ({ id: this.uid(), text, completed: false }));
+        const subtasks = this.newGoal.subtasksText.split('\n').map(s => s.trim()).filter(Boolean).map(text => ({ id: this.uid(), text, completed: false, loggedHours: null }));
         const goal = {
           id: this.uid(),
           topic: this.newGoal.topic.trim(),
@@ -437,6 +440,7 @@
           g.subtasks.forEach(s => s.completed = true);
           if (ev) this.celebrate(ev);
         }
+        this.recomputeGoalLogged(g);
         this.save();
       },
       toggleSubtask(date, gi, si) {
@@ -444,29 +448,19 @@
         const goal = this.goals[date][gi];
         goal.subtasks[si].completed = !goal.subtasks[si].completed;
         goal.completed = goal.subtasks.every(s => s.completed);
+        this.recomputeGoalLogged(goal);
         this.save();
       },
-      commitSubtask(date, gi) {
-        if (this.isReadonly(date)) return;
-        const goal = this.goals[date][gi];
-        const text = (this.subtaskDrafts[goal.id] || '').trim();
-        if (!text) return;
-        goal.subtasks.push({ id: this.uid(), text, completed: false });
-        delete this.subtaskDrafts[goal.id];   // clear the transient draft
-        goal.completed = false;
+      // Add a subtask - only while editing the goal. It appends an empty subtask that
+      // renders as an editable field to type into; blanks are dropped on Done
+      // (stopEditGoal). All structural editing (add/remove/rename) lives in edit mode.
+      addEditSubtask(goal) {
+        if (this.isReadonly(this.selectedDate)) return;
+        const sub = { id: this.uid(), text: '', completed: false, loggedHours: null };
+        goal.subtasks.push(sub);
+        goal.completed = false;   // a fresh, incomplete subtask means the goal isn't done
         this.save();
-      },
-      // Collapse the inline "add subtask" row once focus leaves it entirely. The check
-      // is deferred a tick so clicking the Add button (which blurs the input before its
-      // click fires - and on some browsers the button never takes focus) still commits;
-      // if focus landed back inside the row, we keep it open for rapid entry.
-      collapseSubtaskAdd(ev, goal) {
-        const row = ev.currentTarget;   // capture now - the event nulls currentTarget after dispatch
-        setTimeout(() => {
-          if (row.contains(document.activeElement)) return;
-          goal.addingSubtask = false;
-          delete this.subtaskDrafts[goal.id];
-        }, 100);
+        this.$nextTick?.(() => document.getElementById(`edit-sub-${sub.id}`)?.focus());
       },
       logHours(date, gi, val) {
         if (this.isReadonly(date)) return;
@@ -474,10 +468,28 @@
         this.save();
       },
       // Log actual time from the hours + minutes fields on a completed goal.
+      // Only used for goals WITHOUT subtasks; goals with subtasks roll up (see below).
       logHM(date, gi, h, m) {
         if (this.isReadonly(date)) return;
         this.goals[date][gi].loggedHours = this.hmToHours(h, m);
         this.save();
+      },
+      // Log actual time for a single subtask (hours + minutes), then roll it up.
+      logSubtaskHM(date, gi, si, h, m) {
+        if (this.isReadonly(date)) return;
+        const goal = this.goals[date][gi];
+        goal.subtasks[si].loggedHours = this.hmToHours(h, m);
+        this.recomputeGoalLogged(goal);
+        this.save();
+      },
+      // For a goal WITH subtasks, its actual time is the sum of the completed subtasks'
+      // logged time. Kept in goal.loggedHours so every existing reader (dayStats, metrics,
+      // history) works unchanged. Null when nothing is logged, so it still falls back to
+      // planned hours. No-op for subtask-less goals (their loggedHours is set by logHM).
+      recomputeGoalLogged(goal) {
+        if (!goal.subtasks || !goal.subtasks.length) return;
+        const sum = goal.subtasks.reduce((s, st) => s + (st.completed ? (Number(st.loggedHours) || 0) : 0), 0);
+        goal.loggedHours = sum > 0 ? +sum.toFixed(4) : null;
       },
       deleteGoal(date, gi) { if (this.isReadonly(date)) return; this.goals[date].splice(gi, 1); this.save(); },
 
@@ -531,6 +543,7 @@
         goal.subtasks.splice(si, 1);
         // Recompute completion from what remains; don't let an emptied list flip the goal complete.
         if (goal.subtasks.length > 0) goal.completed = goal.subtasks.every(s => s.completed);
+        this.recomputeGoalLogged(goal);   // dropped subtask -> update the rolled-up actual time
         this.save();
       },
       // Grow an edit <textarea> to fit its content: reset to auto, then match scrollHeight.

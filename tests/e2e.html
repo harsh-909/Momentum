@@ -14,8 +14,8 @@
   <script>
   // ------------------------------------------------------------------
   // Browser end-to-end tests for goal editing, partial-credit scoring,
-  // drag-to-reorder, read-only past days + automatic carry-over, and
-  // time entry in hours + minutes.
+  // drag-to-reorder, read-only past days + automatic carry-over,
+  // time entry in hours + minutes, and per-subtask time roll-up.
   // Runs the REAL index.html + app.js (in the iframe) so no template drift.
   // Results are written into #__results__ as JSON for the Node runner to parse.
   // ------------------------------------------------------------------
@@ -282,40 +282,52 @@
     rec('rollover: the fresh day renders as editable (add-goal form visible)',
         Array.from(doc().querySelectorAll('button')).some(b => /add a goal/i.test(b.textContent) && b.offsetParent !== null));
 
-    // 14. CURRENT FEATURE: inline "add subtask" row - opens on +, commits on Enter, and
-    // collapses on Escape / when focus leaves. (The focusout-collapse logic itself is
-    // unit-tested in app.test.js; here we drive the deterministic state + key paths,
-    // since element focus/layout timing is unreliable under headless.)
+    // 14. CURRENT FEATURE: subtasks are added ONLY in edit mode (no standalone + button).
     comp.selectedDate = comp.today;
     comp.goals[comp.today] = [];
     comp.newGoal = { topic: 'SubFocus', hours: 1, subtasksText: '' };
     comp.addGoal();
     await sleep(120);
     const sfCard = q('.goal-card');
-    const plusBtn = sfCard && sfCard.querySelector('button[title="Add subtask"]');
-    rec('subtask-row: add-subtask (+) button present', !!plusBtn);
-    if (plusBtn) plusBtn.click();
-    await sleep(120);
     const g14 = comp.goals[comp.today][0];
-    rec('subtask-row: opens on + (addingSubtask true)', g14.addingSubtask === true);
-    const subInput = q('input[placeholder="New subtask..."]');
-    rec('subtask-row: input rendered', !!subInput);
-    if (subInput) {
-      subInput.value = 'a subtask'; fireInput(subInput);
-      subInput.dispatchEvent(new (win().KeyboardEvent)('keydown', { key: 'Enter', bubbles: true }));
-      await sleep(120);
-    }
-    rec('subtask-row: Enter commits the subtask', g14.subtasks.length === 1 && g14.subtasks[0].text === 'a subtask');
-    rec('subtask-row: stays open after Enter for rapid entry', g14.addingSubtask === true);
-    // Escape collapses the row and discards any uncommitted draft.
-    const subInput2 = q('input[placeholder="New subtask..."]');
-    if (subInput2) {
-      subInput2.value = 'half typed'; fireInput(subInput2);
-      subInput2.dispatchEvent(new (win().KeyboardEvent)('keydown', { key: 'Escape', bubbles: true }));
-      await sleep(80);
-    }
-    rec('subtask-row: Escape collapses the row', g14.addingSubtask === false);
-    rec('subtask-row: Escape clears the draft', !(g14.id in comp.subtaskDrafts));
+    // No standalone add-subtask affordance is *visible* when not editing. (The edit-mode
+    // "+ Add subtask" button exists in the DOM but is display:none via x-show, so check
+    // visibility via client rects, not mere text presence.)
+    const notEditingAdd = Array.from(sfCard.querySelectorAll('button')).find(b => /add subtask/i.test(b.textContent));
+    rec('edit-only: no add-subtask affordance visible when not editing',
+        !sfCard.querySelector('button[title="Add subtask"]') &&
+        (!notEditingAdd || notEditingAdd.getClientRects().length === 0));
+    // Drive edit mode by component STATE (editingGoalId / subtasks.length), not layout -
+    // clicking a display:none button still fires its @click, and state gates resolve
+    // instantly (getClientRects under headless virtual-time can spin and blow the budget).
+    const clickByText = (re) => { const b = Array.from(sfCard.querySelectorAll('button')).find(x => re.test(x.textContent)); if (b) b.click(); return b; };
+    const clickByTitle = (t) => { const b = sfCard.querySelector(`button[title="${t}"]`); if (b) b.click(); return b; };
+    const enterEdit = async () => { clickByTitle('Edit goal'); await waitFor(() => comp.editingGoalId === g14.id); };
+    const finishEdit = async () => { clickByTitle('Done editing'); await waitFor(() => comp.editingGoalId !== g14.id); };
+
+    // Enter edit mode -> the "+ Add subtask" button becomes visible (x-show flips display,
+    // which is style-based; getClientRects is unreliable for "shown" under virtual-time).
+    await enterEdit();
+    const addSubBtn = await waitFor(() => {
+      const b = Array.from(sfCard.querySelectorAll('button')).find(x => /add subtask/i.test(x.textContent));
+      return (b && win().getComputedStyle(b).display !== 'none') ? b : null;
+    }, 3000);
+    rec('edit-only: "+ Add subtask" button appears in edit mode', !!addSubBtn);
+    clickByText(/add subtask/i);
+    await waitFor(() => g14.subtasks.length === 1);
+    rec('edit-only: clicking it appends an empty subtask', g14.subtasks.length === 1 && g14.subtasks[0].text === '');
+    // Type into the new subtask's edit field, then finish editing.
+    const editSubTa = await waitFor(() => q(`#edit-sub-${g14.subtasks[0].id}`) || q('textarea[placeholder="Subtask"]'));
+    rec('edit-only: new subtask renders an editable field', !!editSubTa);
+    if (editSubTa) { editSubTa.value = 'typed in edit'; fireInput(editSubTa); await sleep(60); }
+    await finishEdit();
+    rec('edit-only: typed subtask is kept on Done', g14.subtasks.length === 1 && g14.subtasks[0].text === 'typed in edit');
+    // An empty subtask added but left blank is dropped on Done.
+    await enterEdit();
+    clickByText(/add subtask/i);
+    await waitFor(() => g14.subtasks.length === 2);
+    await finishEdit();
+    rec('edit-only: a blank added subtask is dropped on Done', g14.subtasks.length === 1);
 
     // 15. CURRENT FEATURE: time entry in hours + minutes (planned + logged).
     comp.selectedDate = comp.today;
@@ -355,6 +367,66 @@
     await sleep(120);
     rec('time: logging 0h 45m stores 0.75 decimal hours', tg.loggedHours === 0.75, 'logged=' + tg.loggedHours);
     rec('time: a "45m" duration label is rendered', hasText(/^45m$/));
+
+    // 16. CURRENT FEATURE: per-subtask time rolls up into the goal's actual time.
+    comp.goals[comp.today] = [];
+    comp.newGoal = { topic: 'Rollup', hours: 2, subtasksText: 'x\ny' };
+    comp.addGoal();
+    await sleep(120);
+    const gru = comp.goals[comp.today][0];
+    // Complete both subtasks via their checkboxes so the "took" fields appear.
+    const subChks = Array.from(q('.goal-card').querySelectorAll('input[type="checkbox"]'));
+    rec('subtime: two subtask checkboxes present', subChks.length === 2);
+    subChks.forEach(c => c.click());
+    await sleep(140);
+    rec('subtime: completing every subtask completes the goal', gru.completed === true);
+    // x-show only toggles display:none, so assert visibility via computed display up the
+    // ancestor chain (offsetParent is unreliable inside this headless iframe).
+    const isShown = (el) => {
+      for (let n = el; n; n = n.parentElement) {
+        if (n.style && n.style.display === 'none') return false;
+        const cs = win().getComputedStyle(n);
+        if (cs && cs.display === 'none') return false;
+      }
+      return true;
+    };
+    // Manual whole-goal time box is hidden for a goal that has subtasks.
+    const manualLabel = Array.from(q('.goal-card').querySelectorAll('*'))
+      .find(el => el.children.length === 0 && /Time actually spent/.test(el.textContent));
+    rec('subtime: manual "time actually spent" box hidden when the goal has subtasks',
+        !manualLabel || !isShown(manualLabel));
+    // Per-subtask "took" h+m fields render and are visible (2 per completed subtask = 4).
+    // Wait for x-show to reveal them (render timing is unreliable under headless).
+    await waitFor(() => Array.from(q('.goal-card').querySelectorAll('input[type="number"]')).filter(isShown).length === 4, 3000);
+    const subTimeIns = Array.from(q('.goal-card').querySelectorAll('input[type="number"]')).filter(isShown);
+    rec('subtime: per-subtask time fields render', subTimeIns.length === 4, 'visible=' + subTimeIns.length);
+    // Log 0h30m and 1h15m; the goal actual should total 1h 45m.
+    comp.logSubtaskHM(comp.today, 0, 0, 0, 30);
+    comp.logSubtaskHM(comp.today, 0, 1, 1, 15);
+    await sleep(120);
+    rec('subtime: goal actual = sum of subtask times (1.75)', gru.loggedHours === 1.75, 'logged=' + gru.loggedHours);
+    rec('subtime: goal card shows the "1h 45m" actual roll-up', hasText(/1h 45m/));
+
+    // 17. Scroll-to-change is disabled on number (time) inputs.
+    comp.goals[comp.today] = [];
+    await sleep(60);
+    const addToggle17 = Array.from(doc().querySelectorAll('button')).find(b => /add a goal/i.test(b.textContent));
+    if (addToggle17) addToggle17.click();
+    await sleep(100);
+    const hIn = doc().querySelector('input[type="number"]');
+    let wheelPrevented = false, focused = false;
+    if (hIn) {
+      try { win().focus(); } catch (e) {}
+      hIn.focus();
+      focused = doc().activeElement === hIn;
+      const wheelEv = new (win().WheelEvent)('wheel', { deltaY: -100, bubbles: true, cancelable: true });
+      hIn.dispatchEvent(wheelEv);
+      wheelPrevented = wheelEv.defaultPrevented;
+    }
+    // The handler only prevents while the field is focused; if headless couldn't focus
+    // it (activeElement didn't stick), skip rather than report a false failure.
+    if (focused) rec('scroll: wheel is prevented on a focused time input', wheelPrevented === true);
+    else rec('scroll: (skipped - headless could not focus the input)', true, 'no focus');
 
     finish();
   }

@@ -130,6 +130,11 @@
     .drag-handle:active { cursor: grabbing; }
     .goal-card.drag-ghost { opacity: 0.4; }
     .goal-card.drag-over { border-color: rgba(167,139,250,0.9); box-shadow: 0 -3px 0 -1px rgba(167,139,250,0.9); }
+    /* Time fields: hide the spinner arrows (wheel-to-change is blocked in init) */
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+
     .subtask-row { border-radius: 8px; }
     .subtask-row.drag-ghost { opacity: 0.4; }
     .subtask-row.drag-over { box-shadow: 0 -2px 0 -1px rgba(167,139,250,0.8); }
@@ -395,10 +400,18 @@
                         <input type="checkbox" class="hidden" :checked="sub.completed" :disabled="isReadonly(selectedDate)" @change="toggleSubtask(selectedDate, gi, si)" />
                         <span class="text-sm transition-colors whitespace-pre-wrap break-words" style="color:var(--muted)" :class="sub.completed ? 'line-through opacity-50' : 'group-hover:text-white'" x-text="sub.text"></span>
                       </label>
+                      <!-- per-subtask actual time, once it's checked done (feeds the goal's total) -->
+                      <div x-show="editingGoalId !== goal.id && sub.completed" class="flex items-center gap-1 mt-1 ml-9">
+                        <span class="text-xs" style="color:var(--muted)">took</span>
+                        <input type="number" min="0" max="24" step="1" :value="hoursPart(sub.loggedHours || 0)" :disabled="isReadonly(selectedDate)" @change="logSubtaskHM(selectedDate, gi, si, $event.target.value, minsPart(sub.loggedHours || 0))" class="w-11 bg-white/5 border border-white/10 rounded-lg px-1.5 py-0.5 text-xs text-white text-center focus:outline-none focus:border-purple-400 disabled:opacity-60" />
+                        <span class="text-xs" style="color:var(--muted)">h</span>
+                        <input type="number" min="0" max="55" step="5" :value="minsPart(sub.loggedHours || 0)" :disabled="isReadonly(selectedDate)" @change="logSubtaskHM(selectedDate, gi, si, hoursPart(sub.loggedHours || 0), $event.target.value)" class="w-11 bg-white/5 border border-white/10 rounded-lg px-1.5 py-0.5 text-xs text-white text-center focus:outline-none focus:border-purple-400 disabled:opacity-60" />
+                        <span class="text-xs" style="color:var(--muted)">m</span>
+                      </div>
                       <!-- edit: rewrite text (auto-growing) or remove; completion state is preserved -->
                       <template x-if="editingGoalId === goal.id">
                         <div class="flex items-start gap-2">
-                          <textarea x-model="sub.text" @input="save(); autoGrow($el)" x-init="$nextTick(() => autoGrow($el))" rows="1" placeholder="Subtask" class="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-400 resize-none overflow-hidden leading-relaxed"></textarea>
+                          <textarea :id="`edit-sub-${sub.id}`" x-model="sub.text" @input="save(); autoGrow($el)" x-init="$nextTick(() => autoGrow($el))" rows="1" placeholder="Subtask" class="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-400 resize-none overflow-hidden leading-relaxed"></textarea>
                           <button @click="removeSubtask(selectedDate, gi, si)" class="text-slate-500 hover:text-red-400 w-7 h-7 rounded-lg transition-colors flex items-center justify-center flex-shrink-0 mt-0.5" title="Remove subtask">✕</button>
                         </div>
                       </template>
@@ -406,26 +419,38 @@
                   </template>
                 </div>
 
-                <!-- Add subtask inline; collapses when focus leaves the row -->
-                <div x-show="goal.addingSubtask" @focusout="collapseSubtaskAdd($event, goal)" class="mt-2.5 flex gap-2">
-                  <input type="text" :id="`sub-input-${goal.id}`" x-model="subtaskDrafts[goal.id]" @keydown.enter="commitSubtask(selectedDate, gi)" @keydown.escape="goal.addingSubtask = false; delete subtaskDrafts[goal.id]" placeholder="New subtask..." class="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-purple-400" />
-                  <button @click="commitSubtask(selectedDate, gi)" class="text-xs font-semibold px-2 rounded-lg pill-accent">Add</button>
+                <!-- Add subtask - edit mode only; appends an empty subtask to type into -->
+                <div x-show="editingGoalId === goal.id" class="mt-2.5">
+                  <button @click="addEditSubtask(goal)" class="text-xs font-semibold px-3 py-1.5 rounded-lg pill-accent">+ Add subtask</button>
                 </div>
 
-                <!-- Log actual time (when completed) -->
-                <div x-show="goal.completed" class="mt-2.5 flex items-center gap-2">
-                  <span class="text-xs" style="color:var(--muted)">Time actually spent:</span>
-                  <input type="number" min="0" max="24" step="1" :value="hoursPart(goal.loggedHours ?? goal.hours)" :disabled="isReadonly(selectedDate)" @change="logHM(selectedDate, gi, $event.target.value, minsPart(goal.loggedHours ?? goal.hours))" class="w-14 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-purple-400 disabled:opacity-60" />
-                  <span class="text-xs" style="color:var(--muted)">h</span>
-                  <input type="number" min="0" max="55" step="5" :value="minsPart(goal.loggedHours ?? goal.hours)" :disabled="isReadonly(selectedDate)" @change="logHM(selectedDate, gi, hoursPart(goal.loggedHours ?? goal.hours), $event.target.value)" class="w-14 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-purple-400 disabled:opacity-60" />
-                  <span class="text-xs" style="color:var(--muted)">m</span>
+                <!-- Actual time (when completed) -->
+                <div x-show="goal.completed" class="mt-2.5">
+                  <!-- goals without subtasks log the whole-goal time here; goals with
+                       subtasks total it up from each subtask's "took" field instead -->
+                  <div x-show="!(goal.subtasks && goal.subtasks.length)" class="flex items-center gap-2">
+                    <span class="text-xs" style="color:var(--muted)">Time actually spent:</span>
+                    <input type="number" min="0" max="24" step="1" :value="hoursPart(goal.loggedHours ?? goal.hours)" :disabled="isReadonly(selectedDate)" @change="logHM(selectedDate, gi, $event.target.value, minsPart(goal.loggedHours ?? goal.hours))" class="w-14 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-purple-400 disabled:opacity-60" />
+                    <span class="text-xs" style="color:var(--muted)">h</span>
+                    <input type="number" min="0" max="55" step="5" :value="minsPart(goal.loggedHours ?? goal.hours)" :disabled="isReadonly(selectedDate)" @change="logHM(selectedDate, gi, hoursPart(goal.loggedHours ?? goal.hours), $event.target.value)" class="w-14 bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-purple-400 disabled:opacity-60" />
+                    <span class="text-xs" style="color:var(--muted)">m</span>
+                  </div>
+                  <!-- planned vs actual roll-up -->
+                  <div class="text-xs mt-1 flex items-center gap-1.5 flex-wrap" style="color:var(--muted)">
+                    <span>Planned</span><span class="text-white" x-text="fmtDuration(goal.hours)"></span>
+                    <template x-if="goal.loggedHours != null">
+                      <span class="flex items-center gap-1.5"><span>→ Actual</span><span :style="goal.loggedHours <= goal.hours ? 'color:var(--good)' : 'color:var(--accent3)'" x-text="fmtDuration(goal.loggedHours)"></span></span>
+                    </template>
+                    <template x-if="goal.loggedHours == null && goal.subtasks && goal.subtasks.length">
+                      <span class="italic opacity-80">→ log time on each subtask to total the actual</span>
+                    </template>
+                  </div>
                 </div>
               </div>
 
               <div class="flex items-center gap-0.5 flex-shrink-0" x-show="!isReadonly(selectedDate)">
                 <button x-show="editingGoalId !== goal.id" @click="startEditGoal(goal)" class="text-slate-500 hover:text-purple-400 w-7 h-7 rounded-lg transition-colors flex items-center justify-center" title="Edit goal">✎</button>
                 <button x-show="editingGoalId === goal.id" @click="stopEditGoal(goal)" class="text-emerald-400 hover:text-emerald-300 w-7 h-7 rounded-lg transition-colors flex items-center justify-center" title="Done editing">✓</button>
-                <button @click="goal.addingSubtask = true; $nextTick(() => document.getElementById(`sub-input-${goal.id}`)?.focus())" class="text-slate-500 hover:text-purple-400 w-7 h-7 rounded-lg transition-colors flex items-center justify-center" title="Add subtask">＋</button>
                 <button x-show="!goal.recurringId" @click="moveToBacklog(selectedDate, gi)" class="text-slate-500 hover:text-orange-400 w-7 h-7 rounded-lg transition-colors flex items-center justify-center" title="Move to backlog">↩</button>
                 <button @click="deleteGoal(selectedDate, gi)" class="text-slate-500 hover:text-red-400 w-7 h-7 rounded-lg transition-colors flex items-center justify-center" title="Delete">✕</button>
               </div>

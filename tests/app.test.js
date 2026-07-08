@@ -57,11 +57,79 @@ function seedGoal(a, over = {}) {
 }
 
 // ============================================================
-// CURRENT FEATURE: time entry in hours + minutes
-// (hmToHours / fmtDuration / hoursPart / minsPart, planned + logged)
+// CURRENT FEATURE: per-subtask time logging (rolls up to the goal's actual time)
+// (logSubtaskHM / recomputeGoalLogged; toggles + remove keep the total in sync)
 // ============================================================
 function featureSuite() {
-  section('Feature: time entry in hours + minutes');
+  section('Feature: per-subtask time logging');
+  const a = makeApp();
+
+  // A goal with subtasks: actual time = sum of the completed subtasks' logged time.
+  const g = seedGoal(a, { hours: 2, subtasks: [
+    { id: 's1', text: 'a', completed: false, loggedHours: null },
+    { id: 's2', text: 'b', completed: false, loggedHours: null },
+  ]});
+  const gi = a.goals[a.selectedDate].indexOf(g);
+
+  a.recomputeGoalLogged(g);
+  check('nothing logged yet -> goal.loggedHours stays null (falls back to planned)', g.loggedHours === null);
+
+  a.toggleSubtask(a.selectedDate, gi, 0);
+  a.logSubtaskHM(a.selectedDate, gi, 0, 0, 30);
+  check('subtask stores its own logged time (30m)', g.subtasks[0].loggedHours === 0.5);
+  check('goal actual rolls up the one logged subtask (0.5)', g.loggedHours === 0.5);
+
+  a.toggleSubtask(a.selectedDate, gi, 1);
+  check('goal auto-completes when every subtask is done', g.completed === true);
+  a.logSubtaskHM(a.selectedDate, gi, 1, 1, 15);
+  check('goal actual = sum of subtask times (1.75)', g.loggedHours === 1.75);
+
+  a.toggleSubtask(a.selectedDate, gi, 1);   // uncheck sub 1
+  check('unchecking a subtask drops its time from the total', g.loggedHours === 0.5);
+  check('unchecking preserves the subtask value for later', g.subtasks[1].loggedHours === 1.25);
+
+  a.toggleSubtask(a.selectedDate, gi, 1);   // re-check
+  check('re-checking restores its time', g.loggedHours === 1.75);
+  a.removeSubtask(a.selectedDate, gi, 1);
+  check('removing a subtask reduces the goal total', g.loggedHours === 0.5);
+
+  // A goal WITHOUT subtasks keeps the manual whole-goal log (logHM); recompute leaves it alone.
+  {
+    const s = makeApp();
+    const g2 = seedGoal(s, { hours: 1, completed: true, subtasks: [] });
+    s.logHM(s.selectedDate, 0, 0, 45);
+    check('subtask-less goal logs time manually', g2.loggedHours === 0.75);
+    s.recomputeGoalLogged(g2);
+    check('recompute is a no-op for a subtask-less goal', g2.loggedHours === 0.75);
+  }
+
+  // Read-only past day rejects per-subtask logging.
+  {
+    const p = makeApp();
+    seedGoalOn(p, PAST, { subtasks: [{ id: 'x', text: 'x', completed: true, loggedHours: null }] });
+    p.logSubtaskHM(PAST, 0, 0, 2, 0);
+    check('logSubtaskHM is a no-op on a read-only past day', p.goals[PAST][0].subtasks[0].loggedHours === null);
+  }
+
+  // Day totals reflect planned vs actual (summed from subtasks).
+  {
+    const s = makeApp();
+    seedGoal(s, { hours: 2, completed: true, subtasks: [
+      { id: 'p1', text: 'a', completed: true, loggedHours: 0.5 },
+      { id: 'p2', text: 'b', completed: true, loggedHours: 1 },
+    ]});
+    s.recomputeGoalLogged(s.goals[s.selectedDate][0]);
+    check('dayStats planned total (2h)', s.dayStats().hours === 2);
+    check('dayStats logged total sums subtask time (1.5)', s.dayStats().doneHours === 1.5);
+  }
+}
+
+// ============================================================
+// SHIPPED: time entry in hours + minutes - permanent regression
+// (hmToHours / fmtDuration / hoursPart / minsPart, planned + logged)
+// ============================================================
+function timeHmSuite() {
+  section('Time entry in hours + minutes');
   const a = makeApp();
 
   // ---- hmToHours: combine the two fields into decimal hours ----
@@ -293,9 +361,8 @@ function readonlyCarrySuite() {
     check('read-only: toggleSubtask is a no-op', g.subtasks[0].completed === false);
     a.logHours(PAST, 0, '5');
     check('read-only: logHours is a no-op', g.loggedHours === null);
-    a.subtaskDrafts[g.id] = 'sneaky';
-    a.commitSubtask(PAST, 0);
-    check('read-only: commitSubtask is a no-op', g.subtasks.length === 1);
+    a.addEditSubtask(g);
+    check('read-only: addEditSubtask is a no-op', g.subtasks.length === 1);
     a.removeSubtask(PAST, 0, 0);
     check('read-only: removeSubtask is a no-op', g.subtasks.length === 1);
     a.deleteGoal(PAST, 0);
@@ -309,32 +376,18 @@ function readonlyCarrySuite() {
     check('read-only: moveToBacklog is a no-op on a past day', a.goals[PAST].length === 1 && a.backlog.length === 0);
   }
 
-  // ---- collapseSubtaskAdd: the inline add-subtask row folds away when focus leaves it ----
+  // ---- addEditSubtask: adding subtasks happens only in edit mode ----
   {
-    // Run the deferred check synchronously and control what "has focus" via a stub document.
-    const runCollapse = (a, goal, focusInsideRow) => {
-      const savedST = global.setTimeout, savedDoc = global.document;
-      const focused = {};
-      global.setTimeout = (fn) => { fn(); return 0; };
-      global.document = { activeElement: focused };
-      // ev.currentTarget is the row; contains() reports whether focus landed back inside it.
-      a.collapseSubtaskAdd({ currentTarget: { contains: (el) => focusInsideRow && el === focused } }, goal);
-      global.setTimeout = savedST; global.document = savedDoc;
-    };
-
     const a = makeApp();
-    const goal = { id: 'g1', addingSubtask: true };
-    a.subtaskDrafts['g1'] = 'leftover';
-    runCollapse(a, goal, false);   // focus moved outside the row
-    check('collapseSubtaskAdd: collapses when focus leaves the row', goal.addingSubtask === false);
-    check('collapseSubtaskAdd: clears the draft on collapse', !('g1' in a.subtaskDrafts));
-
-    const b = makeApp();
-    const goal2 = { id: 'g2', addingSubtask: true };
-    b.subtaskDrafts['g2'] = 'typing';
-    runCollapse(b, goal2, true);   // focus stayed inside (e.g. moved to the Add button)
-    check('collapseSubtaskAdd: stays open when focus is still inside the row', goal2.addingSubtask === true);
-    check('collapseSubtaskAdd: keeps the draft while still focused inside', b.subtaskDrafts['g2'] === 'typing');
+    const g = seedGoal(a, { completed: true, subtasks: [{ id: 's1', text: 'done', completed: true }] });
+    a.addEditSubtask(g);
+    check('addEditSubtask appends an empty subtask', g.subtasks.length === 2 && g.subtasks[1].text === '');
+    check('addEditSubtask un-completes the goal', g.completed === false);
+    check('addEditSubtask gives the new subtask a fresh id', typeof g.subtasks[1].id === 'string' && g.subtasks[1].id !== 's1');
+    // Empty subtasks are dropped when editing ends (stopEditGoal already does this).
+    a.startEditGoal(g);
+    a.stopEditGoal(g);
+    check('empty added subtask is dropped on Done', g.subtasks.length === 1);
   }
 
   // ---- Day boundary at 03:00 (currentDay): late-night work counts to the prior day ----
@@ -585,10 +638,8 @@ function goalEditingSuite() {
 
   // editing state never persisted
   a.editingGoalId = 'something';
-  a.subtaskDrafts = { foo: 'bar' };
   const snap = a.snapshot();
   check('snapshot() excludes editingGoalId', !('editingGoalId' in snap));
-  check('snapshot() excludes subtaskDrafts', !('subtaskDrafts' in snap));
 }
 
 // ============================================================
@@ -599,6 +650,7 @@ function coreSuite() {
   partialCreditSuite();   // shipped feature, kept as permanent regression
   dragReorderSuite();     // shipped feature, kept as permanent regression
   readonlyCarrySuite();   // shipped feature, kept as permanent regression
+  timeHmSuite();          // shipped feature, kept as permanent regression
 
   section('Core: goals & subtasks');
   {
@@ -616,10 +668,8 @@ function coreSuite() {
     a.toggleSubtask(TODAY, 0, 0);
     check('toggleSubtask un-does parent when a subtask is unchecked', g.completed === false);
 
-    a.subtaskDrafts[g.id] = 'three';
-    a.commitSubtask(TODAY, 0);
-    check('commitSubtask adds from draft (no DOM)', g.subtasks.length === 3 && g.subtasks[2].text === 'three');
-    check('commitSubtask clears the draft', !(g.id in a.subtaskDrafts));
+    a.addEditSubtask(g);
+    check('addEditSubtask appends an empty subtask', g.subtasks.length === 3 && g.subtasks[2].text === '');
 
     a.logHours(TODAY, 0, '2.5');
     check('logHours records logged hours', g.loggedHours === 2.5);
