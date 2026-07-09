@@ -63,7 +63,7 @@ export function WeekdayPicker({ value, onChange }: WeekdayPickerProps) {
       </div>
 
       {value.length === 0 && (
-        <p role="alert" className="mt-1.5 text-xs text-alert">
+        <p role="alert" className="mt-1.5 text-xs text-alert-text">
           Pick at least one day
         </p>
       )}

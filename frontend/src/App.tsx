@@ -5,6 +5,7 @@ import { BacklogPage } from './features/backlog/BacklogPage'
 import { HabitsPage } from './features/habits/HabitsPage'
 import { HistoryPage } from './features/history/HistoryPage'
 import { MetricsPage } from './features/metrics/MetricsPage'
+import { PlansPage } from './features/plans/PlansPage'
 import { TodayPage } from './features/today/TodayPage'
 import { useDayRollover } from './hooks/useDayRollover'
 import { useNumberWheelBlock } from './hooks/useNumberWheelBlock'
@@ -75,6 +76,7 @@ function AuthedApp() {
         {activeTab === 'today' && <TodayPage />}
         {activeTab === 'backlog' && <BacklogPage />}
         {activeTab === 'habits' && <HabitsPage />}
+        {activeTab === 'plans' && <PlansPage />}
         {activeTab === 'history' && <HistoryPage />}
         {activeTab === 'metrics' && <MetricsPage />}
       </div>

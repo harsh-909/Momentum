@@ -142,6 +142,31 @@ describe('computeMetrics: avgWeek / totals', () => {
   })
 })
 
+describe('computeMetrics: plan instances are excluded', () => {
+  it('a plan-only day counts as empty and breaks the streak', () => {
+    const data = makeSnapshot()
+    seedGoalOn(data, YESTERDAY, { completed: true }) // strong day
+    seedGoalOn(data, TODAY, { planId: 'p1', completed: true }) // today is plan-only -> empty
+    expect(computeMetrics(data, TODAY).streak).toBe(0)
+  })
+  it('a completed manual goal + an incomplete plan today reads a full streak day', () => {
+    const data = makeSnapshot()
+    seedGoalOn(data, TODAY, { completed: true })
+    seedGoalOn(data, TODAY, { planId: 'p1', completed: false })
+    expect(computeMetrics(data, TODAY).streak).toBe(1)
+  })
+  it('avgWeek/totalHours/totalGoals ignore plan instances; habits and manual goals count', () => {
+    const data = makeSnapshot()
+    seedGoalOn(data, TODAY, { recurringId: 'r1', completed: true, hours: 1 })
+    seedGoalOn(data, TODAY, { completed: true, hours: 2 })
+    seedGoalOn(data, TODAY, { planId: 'p1', completed: true, hours: 5, loggedHours: 4 })
+    const m = computeMetrics(data, TODAY)
+    expect(m.avgWeek).toBe(100)
+    expect(m.totalHours).toBe(3) // 1 + 2, plan's 4 logged excluded
+    expect(m.totalGoals).toBe(2) // habit + manual, plan excluded
+  })
+})
+
 describe('chart series', () => {
   it('dailySeries: completed vs total per day with weekday labels', () => {
     const data = makeSnapshot()

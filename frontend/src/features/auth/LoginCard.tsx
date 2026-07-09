@@ -137,7 +137,7 @@ export function LoginCard() {
         </label>
 
         {error && (
-          <p role="alert" className="text-sm text-alert">
+          <p role="alert" className="text-sm text-alert-text">
             {error}
           </p>
         )}

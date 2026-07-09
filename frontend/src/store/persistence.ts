@@ -25,8 +25,13 @@ export interface SaveSchedulerHooks {
   getVersion(): number
   setVersion(version: number): void
   setStatus(status: SaveStatus): void
-  /** A 409: another tab/device won. The store should adopt the winning doc. */
-  onConflict(winning: ConflictBody): void
+  /**
+   * A 409: another tab/device won. The store should adopt the winning doc.
+   * Returns true if it adopted; false if the 409 body was malformed/unusable
+   * (the scheduler then keeps the change pending and shows an error rather
+   * than silently discarding it).
+   */
+  onConflict(winning: ConflictBody): boolean
   /** A 401: the session died server-side; retrying the same token is futile. */
   onAuthExpired?(): void
 }
@@ -83,8 +88,15 @@ export class SaveScheduler {
         this.savedTimer = setTimeout(() => this.hooks.setStatus('idle'), SAVED_FLASH_MS)
       } catch (err) {
         if (err instanceof ApiError && err.status === 409) {
-          this.hooks.onConflict(err.body as ConflictBody)
-          this.hooks.setStatus('idle')
+          const adopted = this.hooks.onConflict(err.body as ConflictBody)
+          if (adopted) {
+            this.hooks.setStatus('idle')
+          } else {
+            // Unusable conflict body: keep the change pending and retryable
+            // instead of dropping it with a misleading "all saved" status.
+            this.dirty = true
+            this.hooks.setStatus('error')
+          }
           return
         }
         this.dirty = true // keep the change; the retry button re-flushes

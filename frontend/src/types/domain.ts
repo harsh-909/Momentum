@@ -13,6 +13,25 @@ export type DateStr = string
 /** Weekday index, 0 = Sunday .. 6 = Saturday (JS Date.getDay convention). */
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6
 
+/** How often a scheduled item recurs. */
+export type RecurrenceFreq = 'once' | 'weekly' | 'monthly' | 'yearly'
+
+/**
+ * A recurrence rule. Only the fields relevant to `freq` are read; the others
+ * are ignored. Missing required fields make the rule match nothing (defensive).
+ */
+export interface Recurrence {
+  freq: RecurrenceFreq
+  /** weekly: scheduled weekdays (0=Sun..6=Sat). Empty/undefined means every day. */
+  days?: Weekday[]
+  /** monthly & yearly: day of month 1..31. Clamped to the last day of shorter months. */
+  dayOfMonth?: number
+  /** yearly: month 1..12 (used with dayOfMonth). */
+  month?: number
+  /** once: the single target date, YYYY-MM-DD. */
+  date?: DateStr
+}
+
 export interface Subtask {
   id: string
   text: string
@@ -37,6 +56,8 @@ export interface Goal {
   createdAt: DateStr
   /** Back-reference to the habit template this goal was seeded from. */
   recurringId?: string
+  /** Back-reference to the plan template this goal instance was seeded from (mirrors recurringId). */
+  planId?: string
   /** True once this goal's unfinished remainder was copied to the backlog. */
   carried?: boolean
   /** Backlog items only: the day the goal originally belonged to. */
@@ -59,6 +80,18 @@ export interface HabitTemplate {
   days: Weekday[]
 }
 
+export interface PlanTemplate {
+  id: string
+  topic: string
+  /** Planned time per occurrence, decimal hours. */
+  hours: number
+  /** Template subtasks carry only text; instances get ids/completed. */
+  subtasks: Array<{ text: string }>
+  startDate: DateStr
+  /** When this plan is due (once/monthly/yearly). */
+  recurrence: Recurrence
+}
+
 /**
  * The whole persisted document - exactly what PUT /api/data sends and what
  * export/import round-trips. Everything the app knows lives here.
@@ -75,6 +108,12 @@ export interface Snapshot {
   seeded: Record<DateStr, string[]>
   /** Watermark: past days up to and including this date have been swept to backlog. */
   carriedThrough: DateStr | ''
+  /** One-off / monthly / yearly scheduled items, separate from weekly habits. */
+  plans: PlanTemplate[]
+  /** date -> plan template ids materialized/surfaced that day (blocks re-seeding after delete, and double-surfacing). */
+  planSeeded: Record<DateStr, string[]>
+  /** Watermark: missed-plan catch-up has processed past days up to and including this date. */
+  plansSweptThrough: DateStr | ''
 }
 
 /** Aggregates for the day summary dial. */
@@ -96,7 +135,7 @@ export interface Metrics {
   totalGoals: number
 }
 
-export type Tab = 'today' | 'backlog' | 'habits' | 'history' | 'metrics'
+export type Tab = 'today' | 'backlog' | 'habits' | 'plans' | 'history' | 'metrics'
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 export type HistoryFilter = 'all' | 'complete' | 'incomplete'
 

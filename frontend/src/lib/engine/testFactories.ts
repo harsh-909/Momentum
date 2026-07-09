@@ -4,7 +4,7 @@
  *
  * 2026-07-03 is a Friday (weekday 5) - weekday-gated habit tests rely on it.
  */
-import type { Goal, HabitTemplate, Snapshot, Subtask } from '../../types/domain'
+import type { Goal, HabitTemplate, PlanTemplate, Snapshot, Subtask } from '../../types/domain'
 import { uid } from '../id'
 
 export const TODAY = '2026-07-03'
@@ -22,6 +22,9 @@ export function makeSnapshot(over: Partial<Snapshot> = {}): Snapshot {
     recurring: [],
     seeded: {},
     carriedThrough: '',
+    plans: [],
+    planSeeded: {},
+    plansSweptThrough: '',
     ...over,
   }
 }
@@ -58,6 +61,19 @@ export function makeHabit(over: Partial<HabitTemplate> = {}): HabitTemplate {
     subtasks: [],
     startDate: TODAY,
     days: [0, 1, 2, 3, 4, 5, 6],
+    ...over,
+  }
+}
+
+/** A plan template; defaults to a monthly recurrence on the 1st, installed on PAST. */
+export function makePlan(over: Partial<PlanTemplate> = {}): PlanTemplate {
+  return {
+    id: uid(),
+    topic: 'Plan',
+    hours: 1,
+    subtasks: [],
+    startDate: PAST,
+    recurrence: { freq: 'monthly', dayOfMonth: 1 },
     ...over,
   }
 }

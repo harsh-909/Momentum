@@ -16,6 +16,7 @@ import type {
   Goal,
   HabitTemplate,
   HistoryFilter,
+  Recurrence,
   SaveStatus,
   Snapshot,
   Tab,
@@ -36,6 +37,15 @@ export interface HabitDraft {
   hours: number
   subtaskLines: string
   days: number[]
+}
+
+export interface PlanDraft {
+  /** Present when editing an existing plan. */
+  id?: string
+  topic: string
+  hours: number
+  subtaskLines: string
+  recurrence: Recurrence
 }
 
 export interface SessionSlice {
@@ -117,6 +127,11 @@ export interface AppState {
   /** Create or update (draft.id set) a habit; syncs today's untouched instance. */
   submitHabit(draft: HabitDraft): void
   deleteHabit(habitId: string): void
+
+  // -- plans -------------------------------------------------------------
+  /** Create or update (draft.id set) a plan; seeds today if due today. */
+  submitPlan(draft: PlanDraft): void
+  deletePlan(planId: string): void
 }
 
 /** Convenience read helpers the UI uses constantly. */
