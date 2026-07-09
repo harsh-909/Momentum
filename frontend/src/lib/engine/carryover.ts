@@ -23,6 +23,10 @@ import type { DateStr, Goal, Snapshot } from '../../types/domain'
  * Returns null when there is nothing left to carry (a completed goal, or one
  * left unchecked but whose every subtask is done). `backlognedAt` is stamped
  * by the sweep (it knows "today"); the copy itself is date-agnostic.
+ *
+ * The copy is a fresh literal, so it deliberately carries NEITHER `recurringId`
+ * NOR `planId`: a carried plan instance becomes an ordinary backlog task that
+ * counts normally toward a day's score once re-scheduled.
  */
 export function carryCopy(g: Goal, date: DateStr): Goal | null {
   if (g.completed) return null

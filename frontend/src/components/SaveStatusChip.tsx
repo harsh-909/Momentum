@@ -33,7 +33,7 @@ export function SaveStatusChip({ status, onRetry }: SaveStatusChipProps) {
         <button
           type="button"
           onClick={onRetry}
-          className="rounded-badge text-alert underline-offset-2 transition-colors duration-150 ease-click hover:underline"
+          className="rounded-badge text-alert-text underline-offset-2 transition-colors duration-150 ease-click hover:underline"
         >
           Save failed – retry
         </button>

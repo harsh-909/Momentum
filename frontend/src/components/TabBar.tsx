@@ -44,6 +44,13 @@ const ICONS: Record<Tab, ReactNode> = {
       <path d="M3.2 13.6v-2.8H6" />
     </Icon>
   ),
+  // calendar
+  plans: (
+    <Icon>
+      <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
+      <path d="M2.5 6.5h11M5.5 2v2.5M10.5 2v2.5" />
+    </Icon>
+  ),
   // notebook
   history: (
     <Icon>
@@ -64,6 +71,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'today', label: 'Today' },
   { id: 'backlog', label: 'Backlog' },
   { id: 'habits', label: 'Habits' },
+  { id: 'plans', label: 'Plans' },
   { id: 'history', label: 'History' },
   { id: 'metrics', label: 'Metrics' },
 ]

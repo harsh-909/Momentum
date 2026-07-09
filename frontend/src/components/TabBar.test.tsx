@@ -8,10 +8,10 @@ describe('TabBar', () => {
     useAppStore.setState({ ui: { ...useAppStore.getState().ui, activeTab: 'today' } })
   })
 
-  it('renders 5 tabs with aria-selected on the active one', () => {
+  it('renders 6 tabs with aria-selected on the active one', () => {
     render(<TabBar variant="top" />)
     const tabs = screen.getAllByRole('tab')
-    expect(tabs).toHaveLength(5)
+    expect(tabs).toHaveLength(6)
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
     expect(tabs[1]).toHaveAttribute('aria-selected', 'false')
   })
@@ -39,7 +39,7 @@ describe('TabBar', () => {
     tabs[0].focus()
     fireEvent.keyDown(tabs[0], { key: 'ArrowLeft' })
     expect(useAppStore.getState().ui.activeTab).toBe('metrics')
-    expect(document.activeElement).toBe(tabs[4])
+    expect(document.activeElement).toBe(tabs[5])
   })
 
   it('only the active tab is in the tab order (roving tabindex)', () => {

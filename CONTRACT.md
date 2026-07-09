@@ -22,11 +22,11 @@ Implemented by `backend/app/routes/*`, consumed by `frontend/src/api/*` (already
 - Error body shape everywhere: `{"error": "<machine_code>", "detail?": "..."}`.
 - Save is compare-and-swap: `UPDATE snapshots SET doc=$1, version=version+1 WHERE user_id=$2 AND version=$3`; 0 rows -> 409 with current row. Client sends `version: 0` for the first save (INSERT).
 - Username rule (both sides, identical): `^[a-z0-9][a-z0-9_-]{0,31}$`, lowercased. Password: 8-128 chars.
-- The `data` payload is deep-opaque to the server: validate only the top level (dict with date-keyed `goals`/`seeded` maps, `backlog`/`recurring` lists, string `install`/`carriedThrough`), plus the global 2MB body cap.
+- The `data` payload is deep-opaque to the server: validate only the top level (dict with date-keyed `goals`/`seeded`/`planSeeded` maps, `backlog`/`recurring`/`plans` lists, string `install`/`carriedThrough`/`plansSweptThrough`), plus the global 2MB body cap.
 
 ## Snapshot shape
 
-See `frontend/src/types/domain.ts` (authoritative) - identical to v1 `userData/<name>.json` for import/export compatibility.
+See `frontend/src/types/domain.ts` (authoritative) - identical to v1 `userData/<name>.json` for import/export compatibility. Part 2 adds three plan fields (defaulted on import, so old docs still parse): `plans: PlanTemplate[]`, `planSeeded: Record<DateStr, string[]>` (date -> plan template ids materialized/surfaced that day), and `plansSweptThrough: DateStr | ''` (missed-plan catch-up watermark). Plan instances live in `goals[date]` with a `planId` back-ref and are excluded from all scoring/metrics.
 
 ## Engine contract (frontend/src/lib/engine/)
 
@@ -55,8 +55,9 @@ nextRolloverDelay(now: Date, dayStartHour?: number): number  // ms until ~2s pas
 formatDisplayDate(date: DateStr, today: DateStr): string
 
 // scoring.ts
+isPlanInstance(g: Goal): boolean          // g.planId != null; excluded from ALL score/metrics math
 goalProgress(g: Goal): number             // completed=1 | doneSubs/subs | 0
-dayProgressPct(goals: Goal[]): number     // capped 99 unless ALL complete; [] -> 0
+dayProgressPct(goals: Goal[]): number     // scored = non-plan goals; capped 99 unless ALL complete; [] -> 0
 goalDoneHours(g: Goal): number            // finite logged | hours if completed | 0
 historyGoalHours(g: Goal): number         // loggedHours ?? hours
 computeDayStats(goals: Goal[]): DayStats
@@ -96,6 +97,19 @@ syncHabitToToday(data, tpl: HabitTemplate, today): void
 deleteHabit(data, habitId): void          // keeps past instances
 habitsOnDate(data, date): HabitTemplate[] // for the future-day hint
 scheduleLabel(days: number[]): string     // "Every day"|"Weekdays"|"Weekends"|"Mon, Wed"
+
+// recurrence.ts
+lastDayOfMonth(year: number, month1: number): number     // 28..31; explicit leap rule
+matchesSchedule(rec: Recurrence, date: DateStr): boolean  // exact-day; month-end clamps to last day
+recurrenceLabel(rec: Recurrence): string   // "Once on Aug 12, 2026"|"Weekdays"|"Monthly on the 31st"|"Every year on Mar 3"
+
+// plans.ts  (one-off / monthly / yearly items, separate from weekly habits; excluded from scoring)
+instantiatePlan(tpl: PlanTemplate, date: DateStr): Goal   // fresh ids, planId back-ref (never recurringId)
+ensurePlans(data, today): void            // seeds ONLY today; startDate + matchesSchedule + planSeeded gates
+sweepMissedPlans(data, today): void       // catch-up: surfaces missed PAST occurrences to backlog (no planId); watermark plansSweptThrough
+upsertPlan(data, draft: PlanDraft, today): void          // create or edit + ensurePlans
+deletePlan(data, planId): void            // keeps already-seeded instances / surfaced backlog items
+upcomingPlans(data, today, horizonDays): { date; plan }[]  // read-only; occurrences due in the next N days AFTER today, ascending (Today "Coming up" hint)
 
 // metrics.ts
 getLast7Days(data, today): { date: DateStr; goals: Goal[] }[]

@@ -5,7 +5,7 @@
 import { STREAK_THRESHOLD } from '../../types/domain'
 import type { DateStr, Goal, Metrics, Snapshot } from '../../types/domain'
 import { parseLocalDate, shiftDateStr } from './dates'
-import { dayProgressPct, goalDoneHours } from './scoring'
+import { dayProgressPct, goalDoneHours, isPlanInstance } from './scoring'
 
 /** The last 7 dates ending at (and including) today, oldest first. */
 export function getLast7Days(data: Snapshot, today: DateStr): { date: DateStr; goals: Goal[] }[] {
@@ -37,24 +37,30 @@ export function getLast4Weeks(data: Snapshot, today: DateStr): { label: string; 
 /**
  * Summary cards. The streak walks back from today (within the 7-day window)
  * while each day's partial-credit progress clears STREAK_THRESHOLD (70%);
- * a day with NO goals breaks the chain immediately - including today.
- * avgWeek averages only the days that have goals.
+ * a day with NO scored goals breaks the chain immediately - including today.
+ * Plan instances never count, so a plan-only day reads as empty (breaks).
+ * avgWeek averages only the days that have scored goals.
  */
 export function computeMetrics(data: Snapshot, today: DateStr): Metrics {
   const days = getLast7Days(data, today)
   let streak = 0
   for (let i = days.length - 1; i >= 0; i--) {
-    const gs = days[i].goals
+    const gs = days[i].goals.filter((g) => !isPlanInstance(g))
     if (gs.length === 0) break
     if (dayProgressPct(gs) >= STREAK_THRESHOLD) streak++
     else break
   }
-  const activePcts = days.filter((d) => d.goals.length > 0).map((d) => dayProgressPct(d.goals))
+  const activePcts = days
+    .filter((d) => d.goals.some((g) => !isPlanInstance(g)))
+    .map((d) => dayProgressPct(d.goals))
   const avgWeek = activePcts.length
     ? Math.round(activePcts.reduce((a, b) => a + b, 0) / activePcts.length)
     : 0
-  const totalHours = days.reduce((s, d) => s + d.goals.reduce((ss, g) => ss + goalDoneHours(g), 0), 0)
-  const totalGoals = days.reduce((s, d) => s + d.goals.length, 0)
+  const totalHours = days.reduce(
+    (s, d) => s + d.goals.reduce((ss, g) => ss + (isPlanInstance(g) ? 0 : goalDoneHours(g)), 0),
+    0,
+  )
+  const totalGoals = days.reduce((s, d) => s + d.goals.filter((g) => !isPlanInstance(g)).length, 0)
   return { streak, avgWeek, totalHours: +totalHours.toFixed(1), totalGoals }
 }
 
@@ -67,8 +73,8 @@ function dayLabel(date: DateStr): string {
 export function dailySeries(data: Snapshot, today: DateStr): { label: string; completed: number; total: number }[] {
   return getLast7Days(data, today).map(({ date, goals }) => ({
     label: dayLabel(date),
-    completed: goals.filter((g) => g.completed).length,
-    total: goals.length,
+    completed: goals.filter((g) => g.completed && !isPlanInstance(g)).length,
+    total: goals.filter((g) => !isPlanInstance(g)).length,
   }))
 }
 
@@ -81,6 +87,6 @@ export function weeklySeries(data: Snapshot, today: DateStr): { label: string; p
 export function hoursSeries(data: Snapshot, today: DateStr): { label: string; hours: number }[] {
   return getLast7Days(data, today).map(({ date, goals }) => ({
     label: dayLabel(date),
-    hours: goals.reduce((s, g) => s + goalDoneHours(g), 0),
+    hours: goals.reduce((s, g) => s + (isPlanInstance(g) ? 0 : goalDoneHours(g)), 0),
   }))
 }

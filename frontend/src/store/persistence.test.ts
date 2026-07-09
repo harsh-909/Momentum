@@ -21,6 +21,9 @@ function snapshot(): Snapshot {
     recurring: [],
     seeded: {},
     carriedThrough: '',
+    plans: [],
+    planSeeded: {},
+    plansSweptThrough: '',
   }
 }
 
@@ -28,11 +31,15 @@ function makeHooks(): SaveSchedulerHooks & {
   statuses: string[]
   version: number
   conflicts: unknown[]
+  adopt: boolean
 } {
   const h = {
     statuses: [] as string[],
     version: 3,
     conflicts: [] as unknown[],
+    // Whether onConflict reports it adopted the winning doc; flip to false
+    // to simulate a malformed/unusable 409 body.
+    adopt: true,
     getSnapshot: () => snapshot(),
     getVersion: () => h.version,
     setVersion: (v: number) => {
@@ -43,6 +50,7 @@ function makeHooks(): SaveSchedulerHooks & {
     },
     onConflict: (w: unknown) => {
       h.conflicts.push(w)
+      return h.adopt
     },
   }
   return h as ReturnType<typeof makeHooks>
@@ -108,10 +116,10 @@ describe('SaveScheduler', () => {
     expect(s.hasPending()).toBe(false)
   })
 
-  it('409 hands the winning doc to onConflict without an error status', async () => {
+  it('409 with a usable body adopts the winning doc and clears cleanly', async () => {
     const winning = { error: 'version_conflict', version: 9, data: snapshot() }
     mockSave.mockRejectedValueOnce(new ApiError(409, 'version_conflict', winning))
-    const hooks = makeHooks()
+    const hooks = makeHooks() // adopt: true
     const s = new SaveScheduler(hooks)
 
     s.markDirty()
@@ -119,6 +127,20 @@ describe('SaveScheduler', () => {
     expect(hooks.conflicts).toEqual([winning])
     expect(hooks.statuses).toEqual(['saving', 'idle'])
     expect(s.hasPending()).toBe(false)
+  })
+
+  it('409 with a malformed/unusable body keeps the change pending and errors (no silent loss)', async () => {
+    // Regression: a proxy 409 without the contract body must NOT flip to
+    // "all saved" - the edit has to stay retryable.
+    mockSave.mockRejectedValueOnce(new ApiError(409, 'version_conflict', { garbage: true }))
+    const hooks = makeHooks()
+    hooks.adopt = false // onConflict could not adopt
+    const s = new SaveScheduler(hooks)
+
+    s.markDirty()
+    await vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS)
+    expect(hooks.statuses).toEqual(['saving', 'error'])
+    expect(s.hasPending()).toBe(true)
   })
 
   it('no-op flush when nothing is dirty', async () => {

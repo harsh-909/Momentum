@@ -13,7 +13,7 @@ import { fmtDuration } from '../../lib/engine/time'
 import { useAppStore } from '../../store/useAppStore'
 import type { DateStr, Goal } from '../../types/domain'
 import { GoalEditForm } from './GoalEditForm'
-import { BoxArrowIcon, GripIcon, PencilIcon, ReturnIcon, RotateIcon, XIcon } from './icons'
+import { BoxArrowIcon, CalendarIcon, GripIcon, PencilIcon, ReturnIcon, RotateIcon, XIcon } from './icons'
 import { PlannedVsActual } from './PlannedVsActual'
 import { SubtaskList } from './SubtaskList'
 import { TimeLogRow } from './TimeLogRow'
@@ -103,6 +103,12 @@ export function GoalCard({ date, goal, readonly }: GoalCardProps) {
                   habit
                 </Badge>
               )}
+              {goal.planId && (
+                <Badge>
+                  <CalendarIcon className="h-3 w-3" />
+                  plan
+                </Badge>
+              )}
               {goal.carried && (
                 <Badge variant="accent">
                   <ReturnIcon className="h-3 w-3" />
@@ -144,7 +150,7 @@ export function GoalCard({ date, goal, readonly }: GoalCardProps) {
             >
               <PencilIcon className="h-3.5 w-3.5" />
             </button>
-            {!goal.recurringId && (
+            {!goal.recurringId && !goal.planId && (
               <button
                 type="button"
                 title="Move to backlog"

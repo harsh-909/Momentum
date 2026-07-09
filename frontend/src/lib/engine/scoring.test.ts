@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeDayStats, dayProgressPct, goalDoneHours, goalProgress, historyGoalHours } from './scoring'
+import { computeDayStats, dayProgressPct, goalDoneHours, goalProgress, historyGoalHours, isPlanInstance } from './scoring'
 import { makeGoal, makeSubtask } from './testFactories'
 
 describe('goalProgress', () => {
@@ -50,6 +50,40 @@ describe('dayProgressPct', () => {
   })
   it('rounds the average (1/3 -> 33)', () => {
     expect(dayProgressPct([makeGoal({ completed: true }), makeGoal(), makeGoal()])).toBe(33)
+  })
+})
+
+describe('isPlanInstance', () => {
+  it('true only when planId is set', () => {
+    expect(isPlanInstance(makeGoal({ planId: 'p1' }))).toBe(true)
+    expect(isPlanInstance(makeGoal())).toBe(false)
+    expect(isPlanInstance(makeGoal({ recurringId: 'r1' }))).toBe(false)
+  })
+})
+
+describe('plan instances are excluded from scoring', () => {
+  it('dayProgressPct: a completed manual goal + an incomplete plan reads 100 (plan ignored)', () => {
+    expect(dayProgressPct([makeGoal({ completed: true }), makeGoal({ planId: 'p1', completed: false })])).toBe(100)
+  })
+  it('dayProgressPct: a plan-only day reads 0 (all instances excluded -> empty)', () => {
+    expect(dayProgressPct([makeGoal({ planId: 'p1', completed: true })])).toBe(0)
+  })
+  it('dayProgressPct: a habit and a manual goal still count, plan does not', () => {
+    // habit done + manual half done -> 75; the incomplete plan must not drag it to 50.
+    expect(
+      dayProgressPct([
+        makeGoal({ recurringId: 'r1', completed: true }),
+        makeGoal({ subtasks: [makeSubtask({ completed: true }), makeSubtask()] }),
+        makeGoal({ planId: 'p1', completed: false }),
+      ]),
+    ).toBe(75)
+  })
+  it('computeDayStats: plan instance excluded from completed/total/hours/doneHours/pct', () => {
+    const stats = computeDayStats([
+      makeGoal({ completed: true, hours: 2, loggedHours: 1.5 }),
+      makeGoal({ planId: 'p1', completed: false, hours: 5, loggedHours: 3 }),
+    ])
+    expect(stats).toEqual({ completed: 1, total: 1, hours: 2, doneHours: 1.5, pct: 100 })
   })
 })
 

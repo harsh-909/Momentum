@@ -18,6 +18,7 @@ import * as carryover from '../lib/engine/carryover'
 import { computeMinDate, currentDay, isReadonly, shiftDateStr } from '../lib/engine/dates'
 import * as goalsEngine from '../lib/engine/goals'
 import * as habitsEngine from '../lib/engine/habits'
+import * as plansEngine from '../lib/engine/plans'
 import { quoteForDate } from '../lib/engine/copy'
 import { parseImportedSnapshot } from '../lib/engine/validate'
 import { rememberUser } from '../features/auth/recentUsers'
@@ -35,6 +36,9 @@ export function emptySnapshot(username: string, install: string): Snapshot {
     recurring: [],
     seeded: {},
     carriedThrough: '',
+    plans: [],
+    planSeeded: {},
+    plansSweptThrough: '',
   }
 }
 
@@ -57,21 +61,18 @@ const scheduler = new SaveScheduler({
     // Another tab/device won the save race: adopt the server doc wholesale
     // (correctness over merging, per the contract) - but only when the 409
     // body actually matches the contract; a proxy-generated 409 must not
-    // wedge the version counter.
+    // wedge the version counter. Returns whether we adopted, so the scheduler
+    // can keep the change pending (not silently drop it) when we did not.
     if (typeof winning?.version !== 'number' || !winning.data) {
-      useAppStore.setState((s) => {
-        s.ui.saveStatus = 'error'
-      })
-      return
+      return false
     }
     try {
       const snap = parseImportedSnapshot(winning.data)
       serverVersion = winning.version
       useAppStore.getState().hydrate(snap, winning.version)
+      return true
     } catch {
-      useAppStore.setState((s) => {
-        s.ui.saveStatus = 'error'
-      })
+      return false
     }
   },
   onAuthExpired: () => {
@@ -159,7 +160,9 @@ export const useAppStore = create<AppState & InternalActions>()(
         const before = JSON.stringify(get().data)
         set((s) => {
           carryover.sweepPastDays(s.data, s.ui.today)
+          plansEngine.sweepMissedPlans(s.data, s.ui.today)
           habitsEngine.ensureRecurring(s.data, s.ui.today)
+          plansEngine.ensurePlans(s.data, s.ui.today)
         })
         const changed = JSON.stringify(get().data) !== before
         set((s) => {
@@ -243,7 +246,9 @@ export const useAppStore = create<AppState & InternalActions>()(
           s.ui.minDate = computeMinDate(snapshot.install, snapshot.goals)
           s.ui.editingGoalId = null
           carryover.sweepPastDays(s.data, s.ui.today)
+          plansEngine.sweepMissedPlans(s.data, s.ui.today)
           habitsEngine.ensureRecurring(s.data, s.ui.today)
+          plansEngine.ensurePlans(s.data, s.ui.today)
         })
         scheduler.markDirty()
         void scheduler.flushNow()
@@ -299,7 +304,9 @@ export const useAppStore = create<AppState & InternalActions>()(
           const yesterday = shiftDateStr(nowDay, -1)
           if (s.data.carriedThrough > yesterday) s.data.carriedThrough = yesterday
           carryover.sweepPastDays(s.data, nowDay)
+          plansEngine.sweepMissedPlans(s.data, nowDay)
           habitsEngine.ensureRecurring(s.data, nowDay)
+          plansEngine.ensurePlans(s.data, nowDay)
         })
         scheduler.markDirty()
       },
@@ -349,6 +356,10 @@ export const useAppStore = create<AppState & InternalActions>()(
       // -- habits ------------------------------------------------------------
       submitHabit: (draft) => mutate((d, t) => habitsEngine.upsertHabit(d, draft, t)),
       deleteHabit: (habitId) => mutate((d) => habitsEngine.deleteHabit(d, habitId)),
+
+      // -- plans -------------------------------------------------------------
+      submitPlan: (draft) => mutate((d, t) => plansEngine.upsertPlan(d, draft, t)),
+      deletePlan: (planId) => mutate((d) => plansEngine.deletePlan(d, planId)),
     }
     return state
   }),

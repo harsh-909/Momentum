@@ -153,6 +153,19 @@ describe('sweepPastDays', () => {
     })
   })
 
+  it('an incomplete plan instance is carried to the backlog, and the copy drops planId', () => {
+    const data = makeSnapshot()
+    seedGoalOn(data, PAST, { topic: 'plan miss', planId: 'p1', completed: false })
+    sweepPastDays(data, TODAY)
+    expect(data.backlog).toHaveLength(1)
+    const copy = data.backlog[0]
+    expect(copy.topic).toBe('plan miss')
+    expect(copy.planId).toBeUndefined()
+    expect(copy.recurringId).toBeUndefined()
+    expect(copy.originalDate).toBe(PAST)
+    expect(data.goals[PAST][0].carried).toBe(true)
+  })
+
   it('habits are never carried; today/future days are never swept', () => {
     const data = makeSnapshot()
     seedGoalOn(data, PAST, { topic: 'habit', recurringId: 'r1' })

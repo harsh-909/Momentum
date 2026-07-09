@@ -11,6 +11,7 @@ import { habitsOnDate } from '../../lib/engine/habits'
 import { useAppStore } from '../../store/useAppStore'
 import type { Goal } from '../../types/domain'
 import { AddGoalForm } from './AddGoalForm'
+import { ComingUpPlans } from './ComingUpPlans'
 import { DateNav } from './DateNav'
 import { DaySummaryDial } from './DaySummaryDial'
 import { FutureHabitHint } from './FutureHabitHint'
@@ -36,6 +37,8 @@ export function TodayPage() {
     <div data-page="today" className="space-y-4">
       <DateNav />
       <DaySummaryDial goals={goals} />
+
+      {selectedDate === today && <ComingUpPlans />}
 
       {isFuture && <FutureHabitHint count={futureHabitCount} />}
       {readonly && <ReadonlyNotice />}

@@ -30,6 +30,7 @@ const goalSchema = z.object({
   subtasks: z.array(subtaskSchema).default([]),
   createdAt: dateStr.catch(''),
   recurringId: z.string().optional(),
+  planId: z.string().optional(),
   carried: z.boolean().optional(),
   originalDate: dateStr.optional(),
   backlognedAt: dateStr.optional(),
@@ -44,6 +45,23 @@ const habitTemplateSchema = z.object({
   days: z.array(z.number().int().min(0).max(6)).min(1),
 })
 
+const recurrenceSchema = z.object({
+  freq: z.enum(['once', 'weekly', 'monthly', 'yearly']),
+  days: z.array(z.number().int().min(0).max(6)).optional(),
+  dayOfMonth: z.number().int().min(1).max(31).optional(),
+  month: z.number().int().min(1).max(12).optional(),
+  date: dateStr.optional(),
+})
+
+const planSchema = z.object({
+  id: z.string(),
+  topic: z.string(),
+  hours: z.coerce.number().nonnegative(),
+  subtasks: z.array(z.object({ text: z.string() })).default([]),
+  startDate: dateStr,
+  recurrence: recurrenceSchema,
+})
+
 export const snapshotSchema = z.object({
   username: z.string().default(''),
   install: dateStr,
@@ -53,6 +71,9 @@ export const snapshotSchema = z.object({
   recurring: z.array(habitTemplateSchema).default([]),
   seeded: z.record(dateStr, z.array(z.string())).default({}),
   carriedThrough: z.union([dateStr, z.literal('')]).default(''),
+  plans: z.array(planSchema).default([]),
+  planSeeded: z.record(dateStr, z.array(z.string())).default({}),
+  plansSweptThrough: z.union([dateStr, z.literal('')]).default(''),
 })
 
 /**

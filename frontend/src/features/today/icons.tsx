@@ -120,6 +120,16 @@ export function GripIcon({ className = 'h-4 w-4' }: IconProps) {
   )
 }
 
+/** Plan badge / Plans tab: calendar. */
+export function CalendarIcon({ className = 'h-4 w-4' }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
+      <path d="M2.5 6.5h11M5.5 2v2.5M10.5 2v2.5" />
+    </svg>
+  )
+}
+
 /** Add-goal / add-subtask plus. */
 export function PlusIcon({ className = 'h-4 w-4' }: IconProps) {
   return (
