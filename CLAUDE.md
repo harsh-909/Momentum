@@ -2,6 +2,48 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## How to communicate with the owner (READ FIRST)
+
+The owner runs this project through AI-driven development and is NOT a hands-on engineer. Talk to them like a product manager briefing a stakeholder, not like an engineer reading a bug tracker. This applies to EVERY explanation, status update, finding, and report - not just when asked.
+
+- **Lead with plain language.** Say which part of the app you mean by what the user sees or does (e.g. "the little Saving/Saved label in the top bar", "the login screen", "the habits page"), not by file or function name.
+- **For any issue, always answer three questions in this order:** (1) *What part of the app* is this about, in user terms? (2) *What is the problem* - what could a real person experience or lose, and how likely is it? (3) *What's the plan* to fix it, and how big a job is it (quick / medium / large).
+- **Rank by real-world impact,** not technical severity. "Could someone lose data or fail to log in?" matters; "the type is loosely coerced" usually does not.
+- **Keep code/file references out of the main explanation.** If precise pointers are useful, put them in a short "Technical detail" line at the end that the owner can ignore or hand back to an AI.
+- **Avoid jargon** (409, CAS, watermark, contrast ratio, coercion, ...). If a term is unavoidable, define it in half a sentence.
+- **Always give a recommendation and a decision.** End with what you'd do and the one or two choices you need from them, in business terms.
+
+## How work ships: task -> commit -> pull request (FOLLOW EVERY TASK)
+
+The owner reviews **pull requests (PRs)**, not code. Every substantive change ships as its own PR with a plain-language description; the owner approves by merging or rejects by closing. Never merge PRs yourself - merging is the owner's decision (it is also blocked in settings). Never commit directly to `main`.
+
+For each task/request that changes files:
+1. **Branch.** Create a branch off up-to-date `main`, named `type/short-slug` (e.g. `fix/save-status-edge`, `feat/plans-email-reminders`). Keep one logical change per branch - if the working tree already contains unrelated in-flight work, separate it into its own branch/PR rather than lumping it in.
+2. **Verify before shipping.** Run the project's checks (frontend `npx tsc -b --noEmit` + `npx vitest run`; backend `python -m pytest`). Do not open a PR on red unless the owner asked to see failing work.
+3. **Commit** with a conventional-commit message (`feat:`, `fix:`, `refactor:`, `chore:`, ...), no co-author trailer (per the owner's global rule).
+4. **Push** the branch and **open a PR** with `gh pr create`, using the business-language template below.
+5. **Hand back the PR link** and a one-line plain-language summary. Stop there - the owner merges or closes.
+
+**PR description template (business language - the owner reads this, not the diff):**
+```
+## What this does
+<1-3 sentences a non-engineer understands: which part of the app, what changes for a user.>
+
+## Why
+<the problem or request this addresses.>
+
+## What to check (for the owner)
+<the real-world things to eyeball, in user terms - e.g. "the Save failed message is now easier to read".>
+
+## Risk
+<quick / medium / large, and what could go wrong. Note if data or login is touched.>
+
+## Technical detail (ignore unless curious)
+<files/areas touched, test results - the only place code/jargon lives.>
+```
+
+Use the `/ship` command to run this whole flow. `gh` (GitHub CLI) must be installed and authenticated (`gh auth login`); if it is not, prepare the branch + commit and give the owner the one command to run. Recommend the owner enable branch protection on `main` so nothing lands without an approved PR.
+
 ## What this is
 
 "Momentum" - a daily-goals / habit tracker.
