@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ConfirmDialogHost } from '../../components/ConfirmDialog'
+import { useConfirmStore } from '../../lib/confirm'
 import { useAppStore } from '../../store/useAppStore'
 import { GoalList } from './GoalList'
 import { TODAY, makeGoal, seedStore } from './testUtils'
@@ -13,14 +15,21 @@ const initialState = useAppStore.getState()
 
 afterEach(() => {
   useAppStore.setState(initialState, true)
+  useConfirmStore.setState({ pending: null })
   vi.unstubAllGlobals()
   vi.mocked(celebrate).mockClear()
 })
 
-/** Render one goal through GoalList so dnd-kit context is real. */
+/** Render one goal through GoalList so dnd-kit context is real. The confirm
+ *  dialog host is included so destructive actions can be driven end to end. */
 function renderGoal(goal: Goal, opts: Parameters<typeof seedStore>[0] = {}, readonly = false) {
   seedStore({ goals: { [TODAY]: [goal] }, ...opts })
-  return render(<GoalList date={TODAY} goals={[goal]} readonly={readonly} />)
+  return render(
+    <>
+      <GoalList date={TODAY} goals={[goal]} readonly={readonly} />
+      <ConfirmDialogHost />
+    </>,
+  )
 }
 
 describe('GoalCard actions', () => {
@@ -49,16 +58,16 @@ describe('GoalCard actions', () => {
   it('deletes only after confirmation', async () => {
     const deleteGoal = vi.fn()
     const goal = makeGoal()
-    const confirmFn = vi.fn().mockReturnValue(false)
-    vi.stubGlobal('confirm', confirmFn)
     renderGoal(goal, { actions: { deleteGoal } })
 
+    // Cancelling the confirm keeps the goal.
     await userEvent.click(screen.getByTitle('Delete'))
-    expect(confirmFn).toHaveBeenCalled()
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
     expect(deleteGoal).not.toHaveBeenCalled()
 
-    confirmFn.mockReturnValue(true)
+    // Confirming deletes it.
     await userEvent.click(screen.getByTitle('Delete'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete' }))
     expect(deleteGoal).toHaveBeenCalledWith(TODAY, goal.id)
   })
 

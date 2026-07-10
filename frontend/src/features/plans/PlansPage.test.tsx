@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ConfirmDialogHost } from '../../components/ConfirmDialog'
+import { useConfirmStore } from '../../lib/confirm'
 import { makePlan, makeSnapshot, TODAY } from '../../lib/engine/testFactories'
 import { useAppStore } from '../../store/useAppStore'
 import type { PlanTemplate } from '../../types/domain'
@@ -10,6 +12,7 @@ const initialState = useAppStore.getState()
 
 afterEach(() => {
   useAppStore.setState(initialState, true)
+  useConfirmStore.setState({ pending: null })
   vi.unstubAllGlobals()
 })
 
@@ -131,11 +134,14 @@ describe('PlanCard delete', () => {
     const deletePlan = vi.fn()
     seedStore([plan])
     useAppStore.setState({ deletePlan })
-    const confirmFn = vi.fn().mockReturnValue(true)
-    vi.stubGlobal('confirm', confirmFn)
-    render(<PlansPage />)
+    render(
+      <>
+        <PlansPage />
+        <ConfirmDialogHost />
+      </>,
+    )
     await userEvent.click(screen.getByRole('button', { name: 'Delete plan "Pay rent"' }))
-    expect(confirmFn).toHaveBeenCalledWith('Stop this plan? Occurrences already placed keep their record.')
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop plan' }))
     expect(deletePlan).toHaveBeenCalledWith(plan.id)
   })
 
@@ -143,9 +149,14 @@ describe('PlanCard delete', () => {
     const deletePlan = vi.fn()
     seedStore([makePlan({ topic: 'Pay rent' })])
     useAppStore.setState({ deletePlan })
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(false))
-    render(<PlansPage />)
+    render(
+      <>
+        <PlansPage />
+        <ConfirmDialogHost />
+      </>,
+    )
     await userEvent.click(screen.getByRole('button', { name: 'Delete plan "Pay rent"' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
     expect(deletePlan).not.toHaveBeenCalled()
   })
 })

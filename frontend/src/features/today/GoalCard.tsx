@@ -8,6 +8,7 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Badge } from '../../components/Badge'
 import { CheckToggle } from '../../components/CheckToggle'
+import { confirmDialog } from '../../lib/confirm'
 import { celebrate } from '../../lib/confetti'
 import { fmtDuration } from '../../lib/engine/time'
 import { useAppStore } from '../../store/useAppStore'
@@ -45,8 +46,14 @@ export function GoalCard({ date, goal, readonly }: GoalCardProps) {
     if (willComplete && checkRef.current) celebrate(checkRef.current)
   }
 
-  const handleDelete = () => {
-    if (window.confirm('Delete this goal?')) deleteGoal(date, goal.id)
+  const handleDelete = async () => {
+    const ok = await confirmDialog({
+      title: 'Delete this goal?',
+      message: `"${goal.topic}" will be removed. This can't be undone.`,
+      confirmLabel: 'Delete',
+      tone: 'danger',
+    })
+    if (ok) deleteGoal(date, goal.id)
   }
 
   const doneSubs = goal.subtasks.filter((s) => s.completed).length

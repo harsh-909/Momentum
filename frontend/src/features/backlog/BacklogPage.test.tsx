@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ConfirmDialogHost } from '../../components/ConfirmDialog'
+import { useConfirmStore } from '../../lib/confirm'
 import { makeGoal, makeSnapshot, makeSubtask, TODAY } from '../../lib/engine/testFactories'
 import { useAppStore } from '../../store/useAppStore'
 import { BacklogPage } from './BacklogPage'
@@ -9,6 +11,7 @@ const initialState = useAppStore.getState()
 
 afterEach(() => {
   useAppStore.setState(initialState, true)
+  useConfirmStore.setState({ pending: null })
   vi.unstubAllGlobals()
 })
 
@@ -89,12 +92,14 @@ describe('BacklogPage actions', () => {
     const deleteBacklogItem = vi.fn()
     seedStore({ backlog: fixtureBacklog() })
     useAppStore.setState({ deleteBacklogItem })
-    // happy-dom ships no confirm(); stub the global the component calls.
-    const confirmFn = vi.fn().mockReturnValue(true)
-    vi.stubGlobal('confirm', confirmFn)
-    render(<BacklogPage />)
+    render(
+      <>
+        <BacklogPage />
+        <ConfirmDialogHost />
+      </>,
+    )
     await userEvent.click(screen.getByRole('button', { name: 'Remove "Fix the bike" from backlog' }))
-    expect(confirmFn).toHaveBeenCalled()
+    await userEvent.click(await screen.findByRole('button', { name: 'Remove' }))
     expect(deleteBacklogItem).toHaveBeenCalledWith(1)
   })
 
@@ -102,9 +107,14 @@ describe('BacklogPage actions', () => {
     const deleteBacklogItem = vi.fn()
     seedStore({ backlog: fixtureBacklog() })
     useAppStore.setState({ deleteBacklogItem })
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(false))
-    render(<BacklogPage />)
+    render(
+      <>
+        <BacklogPage />
+        <ConfirmDialogHost />
+      </>,
+    )
     await userEvent.click(screen.getByRole('button', { name: 'Remove "Fix the bike" from backlog' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
     expect(deleteBacklogItem).not.toHaveBeenCalled()
   })
 })
