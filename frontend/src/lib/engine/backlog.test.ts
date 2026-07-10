@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { deleteBacklogItem, moveToBacklog, scheduleFromBacklog } from './backlog'
+import {
+  bulkMoveToBacklog,
+  deleteBacklogItem,
+  isBacklogEligible,
+  moveToBacklog,
+  restoreToDay,
+  scheduleFromBacklog,
+} from './backlog'
 import { FUTURE, makeGoal, makeSnapshot, PAST, seedGoalOn, TODAY } from './testFactories'
 
 describe('moveToBacklog', () => {
@@ -40,6 +47,65 @@ describe('moveToBacklog', () => {
   })
   it('returns false for an unknown goal id', () => {
     expect(moveToBacklog(makeSnapshot(), TODAY, 'nope', TODAY)).toBe(false)
+  })
+})
+
+describe('isBacklogEligible', () => {
+  it('is true for a plain goal, false for habit and plan instances', () => {
+    expect(isBacklogEligible(makeGoal())).toBe(true)
+    expect(isBacklogEligible(makeGoal({ recurringId: 'r1' }))).toBe(false)
+    expect(isBacklogEligible(makeGoal({ planId: 'p1' }))).toBe(false)
+  })
+})
+
+describe('bulkMoveToBacklog', () => {
+  it('moves every eligible goal and returns their ids', () => {
+    const data = makeSnapshot()
+    const a = seedGoalOn(data, TODAY, { topic: 'a' })
+    const b = seedGoalOn(data, TODAY, { topic: 'b' })
+    const moved = bulkMoveToBacklog(data, TODAY, [a.id, b.id], TODAY)
+    expect(moved).toEqual([a.id, b.id])
+    expect(data.goals[TODAY]).toHaveLength(0)
+    expect(data.backlog.map((g) => g.topic).sort()).toEqual(['a', 'b'])
+  })
+
+  it('skips habit and plan instances and unknown ids', () => {
+    const data = makeSnapshot()
+    const plain = seedGoalOn(data, TODAY, { topic: 'plain' })
+    const habit = seedGoalOn(data, TODAY, { topic: 'habit', recurringId: 'r1' })
+    const plan = seedGoalOn(data, TODAY, { topic: 'plan', planId: 'p1' })
+    const moved = bulkMoveToBacklog(data, TODAY, [plain.id, habit.id, plan.id, 'nope'], TODAY)
+    expect(moved).toEqual([plain.id])
+    expect(data.goals[TODAY].map((g) => g.topic).sort()).toEqual(['habit', 'plan'])
+  })
+
+  it('refuses a read-only past day', () => {
+    const data = makeSnapshot()
+    const g = seedGoalOn(data, PAST)
+    expect(bulkMoveToBacklog(data, PAST, [g.id], TODAY)).toEqual([])
+    expect(data.goals[PAST]).toHaveLength(1)
+  })
+})
+
+describe('restoreToDay', () => {
+  it('pulls the given goals back onto the day and clears the backlog stamp', () => {
+    const data = makeSnapshot()
+    const a = seedGoalOn(data, TODAY, { topic: 'a' })
+    const b = seedGoalOn(data, TODAY, { topic: 'b' })
+    const moved = bulkMoveToBacklog(data, TODAY, [a.id, b.id], TODAY)
+    expect(data.goals[TODAY]).toHaveLength(0)
+
+    restoreToDay(data, TODAY, moved, TODAY)
+    expect(data.backlog).toHaveLength(0)
+    expect(data.goals[TODAY].map((g) => g.topic).sort()).toEqual(['a', 'b'])
+    expect(data.goals[TODAY].every((g) => g.backlognedAt === undefined)).toBe(true)
+  })
+
+  it('ignores ids not in the backlog', () => {
+    const data = makeSnapshot()
+    seedGoalOn(data, TODAY, { topic: 'stays' })
+    restoreToDay(data, TODAY, ['nope'], TODAY)
+    expect(data.goals[TODAY].map((g) => g.topic)).toEqual(['stays'])
   })
 })
 

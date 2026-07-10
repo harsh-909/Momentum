@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import type { ReactNode } from 'react'
 import { useAppStore } from '../store/useAppStore'
+import { AccountMenu } from './AccountMenu'
+import { IconButton } from './Button'
 import { SaveStatusChip } from './SaveStatusChip'
 
 const THEME_KEY = 'momentum.theme'
@@ -13,31 +14,6 @@ function greeting(now: Date = new Date()): string {
   if (h < 17) return 'Good afternoon'
   if (h < 21) return 'Good evening'
   return 'Winding down'
-}
-
-function IconButton({
-  label,
-  onClick,
-  disabled = false,
-  children,
-}: {
-  label: string
-  onClick?: () => void
-  disabled?: boolean
-  children: ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      disabled={disabled}
-      className="flex h-8 w-8 items-center justify-center rounded-btn border border-line bg-face text-muted transition-colors duration-150 ease-click hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
-    >
-      {children}
-    </button>
-  )
 }
 
 /** Sun/moon toggle for the .dark class; explicit choice wins over the OS. */
@@ -115,7 +91,6 @@ export function Header({ streak, onExport, onImport }: HeaderProps) {
 
   const name = user?.username ?? ''
   const displayName = name ? name.charAt(0).toUpperCase() + name.slice(1) : ''
-  const initial = (name || '?').charAt(0).toUpperCase()
 
   return (
     <header className="flex items-center justify-between gap-3 py-4">
@@ -144,44 +119,12 @@ export function Header({ streak, onExport, onImport }: HeaderProps) {
 
         <ThemeToggle />
 
-        <IconButton label="Export data" onClick={onExport} disabled={!onExport}>
-          <svg
-            viewBox="0 0 16 16"
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.25}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M8 2.5v7.5M4.8 7l3.2 3.2L11.2 7M3 13.5h10" />
-          </svg>
-        </IconButton>
-        <IconButton label="Import data" onClick={onImport} disabled={!onImport}>
-          <svg
-            viewBox="0 0 16 16"
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.25}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M8 10.5V3M4.8 6.2 8 3l3.2 3.2M3 13.5h10" />
-          </svg>
-        </IconButton>
-
-        <button
-          type="button"
-          aria-label="Log out"
-          title={`Log out ${displayName}`.trim()}
-          onClick={() => void logout()}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-line bg-face font-display text-xs font-semibold text-ink transition-colors duration-150 ease-click hover:border-accent hover:text-accent-text"
-        >
-          {initial}
-        </button>
+        <AccountMenu
+          name={displayName}
+          onExport={onExport}
+          onImport={onImport}
+          onLogout={() => void logout()}
+        />
       </div>
     </header>
   )

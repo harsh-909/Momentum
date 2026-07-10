@@ -6,6 +6,7 @@
  * day's list is still empty (e.g. the engine refused the add).
  */
 import { useState } from 'react'
+import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
 import { HmInput } from '../../components/HmInput'
 import { isEvening } from '../../lib/engine/copy'
@@ -45,16 +46,16 @@ export function AddGoalForm({ date }: { date: DateStr }) {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className={`flex w-full items-center gap-2.5 rounded-btn px-1 py-1 text-left font-display text-sm font-semibold transition-colors duration-150 ease-click ${
-          open ? 'text-ink' : 'text-muted hover:text-ink'
+        className={`flex w-full items-center gap-2.5 rounded-btn px-2 py-2 text-left font-display text-sm font-semibold transition-colors duration-150 ease-click ${
+          open ? 'text-ink' : 'text-muted hover:bg-dial hover:text-ink'
         }`}
       >
         <span
-          className={`flex h-6 w-6 items-center justify-center rounded-btn border transition-colors duration-150 ease-click ${
-            open ? 'border-accent-fill bg-accent-fill text-on-accent' : 'border-line text-muted'
+          className={`flex h-7 w-7 items-center justify-center rounded-btn border transition-colors duration-150 ease-click ${
+            open ? 'border-accent-fill bg-accent-fill text-on-accent' : 'border-accent/40 text-accent-text'
           }`}
         >
-          <PlusIcon className="h-3.5 w-3.5" />
+          <PlusIcon className="h-4 w-4" />
         </span>
         {submitLabel}
       </button>
@@ -91,23 +92,18 @@ export function AddGoalForm({ date }: { date: DateStr }) {
           </div>
 
           <div className="flex justify-end gap-2">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
               onClick={() => {
                 setOpen(false)
                 reset()
               }}
-              className="rounded-btn px-3 py-2 text-xs text-muted transition-colors duration-150 ease-click hover:text-ink"
             >
               Cancel
-            </button>
-            <button
-              type="button"
-              onClick={submit}
-              className="label-caps rounded-btn bg-accent-fill px-4 py-2 font-display text-[11px] text-on-accent transition-opacity duration-150 ease-click hover:opacity-90"
-            >
+            </Button>
+            <Button variant="primary" onClick={submit}>
               {submitLabel}
-            </button>
+            </Button>
           </div>
         </div>
       )}
