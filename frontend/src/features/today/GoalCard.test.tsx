@@ -33,18 +33,9 @@ function renderGoal(goal: Goal, opts: Parameters<typeof seedStore>[0] = {}, read
 }
 
 describe('GoalCard actions', () => {
-  it('hides the move-to-backlog button for habit-derived goals', () => {
+  it('shows the habit badge on habit-derived goals', () => {
     renderGoal(makeGoal({ recurringId: 'habit-1' }))
-    expect(screen.queryByTitle('Move to backlog')).not.toBeInTheDocument()
     expect(screen.getByText('habit')).toBeInTheDocument()
-  })
-
-  it('moves a plain goal to the backlog', async () => {
-    const moveToBacklog = vi.fn()
-    const goal = makeGoal()
-    renderGoal(goal, { actions: { moveToBacklog } })
-    await userEvent.click(screen.getByTitle('Move to backlog'))
-    expect(moveToBacklog).toHaveBeenCalledWith(TODAY, goal.id)
   })
 
   it('disables the checkbox and hides the action rail when readonly', () => {
@@ -52,7 +43,6 @@ describe('GoalCard actions', () => {
     expect(screen.getByRole('checkbox', { name: 'Frozen' })).toBeDisabled()
     expect(screen.queryByTitle('Edit goal')).not.toBeInTheDocument()
     expect(screen.queryByTitle('Delete')).not.toBeInTheDocument()
-    expect(screen.queryByTitle('Move to backlog')).not.toBeInTheDocument()
   })
 
   it('deletes only after confirmation', async () => {

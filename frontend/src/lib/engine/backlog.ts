@@ -2,7 +2,15 @@
  * Backlog moves (ported from legacy/app.js "Backlog").
  */
 import { isReadonly } from './dates'
-import type { DateStr, Snapshot } from '../../types/domain'
+import type { DateStr, Goal, Snapshot } from '../../types/domain'
+
+/**
+ * Whether a day goal can be manually moved to the backlog. Habit and plan
+ * instances are day-bound, so they never are.
+ */
+export function isBacklogEligible(goal: Goal): boolean {
+  return !goal.recurringId && !goal.planId
+}
 
 /**
  * Manually defer a goal to the backlog. Refused for read-only past days
@@ -24,6 +32,45 @@ export function moveToBacklog(data: Snapshot, date: DateStr, goalId: string, tod
   goal.backlognedAt = today
   data.backlog.unshift(goal)
   return true
+}
+
+/**
+ * Move several goals to the backlog in one pass, so a batch is a single save.
+ * Skips ineligible goals (habits, plans) and read-only days. Returns the ids
+ * actually moved - the caller uses them to offer a matching Undo.
+ */
+export function bulkMoveToBacklog(
+  data: Snapshot,
+  date: DateStr,
+  goalIds: string[],
+  today: DateStr,
+): string[] {
+  if (isReadonly(date, today)) return []
+  const moved: string[] = []
+  for (const id of goalIds) {
+    const goal = (data.goals[date] || []).find((g) => g.id === id)
+    if (!goal || !isBacklogEligible(goal)) continue
+    if (moveToBacklog(data, date, id, today)) moved.push(id)
+  }
+  return moved
+}
+
+/**
+ * Undo a backlog move: pull the given goals back out of the backlog (by id)
+ * and re-add them to the day, clearing the "in backlog" stamp. Best-effort
+ * restore used by the Undo affordance right after a bulk move; positions are
+ * appended rather than exactly reinstated.
+ */
+export function restoreToDay(data: Snapshot, date: DateStr, goalIds: string[], today: DateStr): void {
+  if (isReadonly(date, today)) return
+  if (!data.goals[date]) data.goals[date] = []
+  for (const id of goalIds) {
+    const i = data.backlog.findIndex((g) => g.id === id)
+    if (i === -1) continue
+    const goal = data.backlog.splice(i, 1)[0]
+    goal.backlognedAt = undefined
+    data.goals[date].push(goal)
+  }
 }
 
 /**

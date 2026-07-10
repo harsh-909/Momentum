@@ -16,18 +16,27 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
+import { isBacklogEligible } from '../../lib/engine/backlog'
 import { useAppStore } from '../../store/useAppStore'
 import type { DateStr, Goal } from '../../types/domain'
 import { makeDragEndHandler } from './dragEnd'
 import { GoalCard } from './GoalCard'
 
+/** Bulk-select state passed down from the Today page while selecting. */
+export interface GoalListSelection {
+  active: boolean
+  selectedIds: Set<string>
+  onToggle: (goalId: string) => void
+}
+
 export interface GoalListProps {
   date: DateStr
   goals: Goal[]
   readonly: boolean
+  selection?: GoalListSelection
 }
 
-export function GoalList({ date, goals, readonly }: GoalListProps) {
+export function GoalList({ date, goals, readonly, selection }: GoalListProps) {
   const reorderGoal = useAppStore((s) => s.reorderGoal)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -50,7 +59,20 @@ export function GoalList({ date, goals, readonly }: GoalListProps) {
       >
         <div className="space-y-3">
           {goals.map((goal) => (
-            <GoalCard key={goal.id} date={date} goal={goal} readonly={readonly} />
+            <GoalCard
+              key={goal.id}
+              date={date}
+              goal={goal}
+              readonly={readonly}
+              selection={
+                selection && {
+                  active: selection.active,
+                  selected: selection.selectedIds.has(goal.id),
+                  eligible: isBacklogEligible(goal),
+                  onToggle: () => selection.onToggle(goal.id),
+                }
+              }
+            />
           ))}
         </div>
       </SortableContext>
