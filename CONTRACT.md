@@ -81,7 +81,10 @@ deleteGoal(data, date, goalId, today): void
 cleanText(s: string): string
 
 // backlog.ts
+isBacklogEligible(goal): boolean                         // false for recurringId/planId
 moveToBacklog(data, date, goalId, today): boolean        // false for recurringId/readonly
+bulkMoveToBacklog(data, date, goalIds, today): string[]  // moves eligible ids, returns moved
+restoreToDay(data, date, goalIds, today): void           // undo: pull ids back onto the day
 scheduleFromBacklog(data, index, date, today): void      // refuse date < today
 deleteBacklogItem(data, index): void
 

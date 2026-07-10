@@ -138,3 +138,42 @@ export function PlusIcon({ className = 'h-4 w-4' }: IconProps) {
     </svg>
   )
 }
+
+/** Export data: arrow coming down into an open tray. */
+export function DownloadIcon({ className = 'h-4 w-4' }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M8 2.5v7M5 6.6 8 9.6l3-3" />
+      <path d="M2.8 11v1.5a1 1 0 0 0 1 1h8.4a1 1 0 0 0 1-1V11" />
+    </svg>
+  )
+}
+
+/** Import data: arrow rising up out of an open tray. */
+export function UploadIcon({ className = 'h-4 w-4' }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M8 9.6v-7M5 5.5 8 2.5l3 3" />
+      <path d="M2.8 11v1.5a1 1 0 0 0 1 1h8.4a1 1 0 0 0 1-1V11" />
+    </svg>
+  )
+}
+
+/** Log out: doorway with an arrow leaving to the right. */
+export function LogoutIcon({ className = 'h-4 w-4' }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M6.5 2.5H4a1.2 1.2 0 0 0-1.2 1.2v8.6A1.2 1.2 0 0 0 4 13.5h2.5" />
+      <path d="M9 8h4.5M11.4 5.8 13.7 8l-2.3 2.2" />
+    </svg>
+  )
+}
+
+/** Small caret for disclosure controls (menus). */
+export function ChevronDownIcon({ className = 'h-3 w-3' }: IconProps) {
+  return (
+    <svg {...base(className)}>
+      <path d="M4 6l4 4 4-4" />
+    </svg>
+  )
+}

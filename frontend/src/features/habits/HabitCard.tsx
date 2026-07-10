@@ -5,6 +5,7 @@
 import { Badge } from '../../components/Badge'
 import { Card } from '../../components/Card'
 import { formatDisplayDate } from '../../lib/engine/dates'
+import { confirmDialog } from '../../lib/confirm'
 import { scheduleLabel } from '../../lib/engine/habits'
 import { fmtDuration } from '../../lib/engine/time'
 import { PencilIcon, XIcon } from '../today/icons'
@@ -83,10 +84,14 @@ export function HabitCard({ habit, today, onEdit, onDelete }: HabitCardProps) {
         <button
           type="button"
           aria-label={`Delete habit "${habit.topic}"`}
-          onClick={() => {
-            if (confirm('Stop this habit? Days already logged keep their record.')) {
-              onDelete(habit.id)
-            }
+          onClick={async () => {
+            const ok = await confirmDialog({
+              title: 'Stop this habit?',
+              message: `"${habit.topic}" won't be scheduled going forward. Days already logged keep their record.`,
+              confirmLabel: 'Stop habit',
+              tone: 'danger',
+            })
+            if (ok) onDelete(habit.id)
           }}
           className="hit-halo flex h-7 w-7 items-center justify-center rounded-btn text-muted transition-colors duration-150 ease-click hover:text-alert"
         >

@@ -120,6 +120,10 @@ export interface AppState {
   // -- backlog -----------------------------------------------------------
   /** Refused for habit-derived goals (recurringId) and past days. */
   moveToBacklog(date: DateStr, goalId: string): void
+  /** Move several eligible goals to the backlog at once (one save). */
+  bulkMoveToBacklog(date: DateStr, goalIds: string[]): void
+  /** Undo a bulk move: pull the given goals back onto the day. */
+  restoreToDay(date: DateStr, goalIds: string[]): void
   scheduleFromBacklog(index: number, date: DateStr): void
   deleteBacklogItem(index: number): void
 

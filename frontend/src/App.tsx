@@ -10,6 +10,7 @@ import { TodayPage } from './features/today/TodayPage'
 import { useDayRollover } from './hooks/useDayRollover'
 import { useNumberWheelBlock } from './hooks/useNumberWheelBlock'
 import { useUnloadFlush } from './hooks/useUnloadFlush'
+import { confirmDialog } from './lib/confirm'
 import { computeMetrics } from './lib/engine/metrics'
 import { parseImportedSnapshot } from './lib/engine/validate'
 import { useAppStore } from './store/useAppStore'
@@ -44,7 +45,13 @@ function AuthedApp() {
     const name = data.username || 'this profile'
     try {
       const snapshot = parseImportedSnapshot(JSON.parse(await file.text()))
-      if (!confirm(`Import "${file.name}"? This replaces ${name}'s current data.`)) return
+      const ok = await confirmDialog({
+        title: 'Import this file?',
+        message: `"${file.name}" will replace ${name}'s current data. This can't be undone.`,
+        confirmLabel: 'Import',
+        tone: 'danger',
+      })
+      if (!ok) return
       importSnapshot(snapshot)
       alert('Import complete.')
     } catch {

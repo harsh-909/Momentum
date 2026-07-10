@@ -6,6 +6,7 @@
 import { Badge } from '../../components/Badge'
 import { Card } from '../../components/Card'
 import { formatDisplayDate } from '../../lib/engine/dates'
+import { confirmDialog } from '../../lib/confirm'
 import { recurrenceLabel } from '../../lib/engine/recurrence'
 import { fmtDuration } from '../../lib/engine/time'
 import type { PlanDraft } from '../../store/types'
@@ -76,10 +77,14 @@ export function PlanCard({ plan, today, onEdit, onDelete }: PlanCardProps) {
         <button
           type="button"
           aria-label={`Delete plan "${plan.topic}"`}
-          onClick={() => {
-            if (confirm('Stop this plan? Occurrences already placed keep their record.')) {
-              onDelete(plan.id)
-            }
+          onClick={async () => {
+            const ok = await confirmDialog({
+              title: 'Stop this plan?',
+              message: `"${plan.topic}" won't be scheduled going forward. Occurrences already placed keep their record.`,
+              confirmLabel: 'Stop plan',
+              tone: 'danger',
+            })
+            if (ok) onDelete(plan.id)
           }}
           className="hit-halo flex h-7 w-7 items-center justify-center rounded-btn text-muted transition-colors duration-150 ease-click hover:text-alert"
         >

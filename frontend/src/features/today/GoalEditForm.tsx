@@ -8,6 +8,7 @@
  */
 import { useRef } from 'react'
 import { HmInput } from '../../components/HmInput'
+import { confirmDialog } from '../../lib/confirm'
 import { useAppStore } from '../../store/useAppStore'
 import type { DateStr, Goal } from '../../types/domain'
 import { CheckIcon, PlusIcon, XIcon } from './icons'
@@ -94,9 +95,17 @@ export function GoalEditForm({ date, goal }: { date: DateStr; goal: Goal }) {
               type="button"
               title="Remove subtask"
               aria-label={`Remove subtask ${sub.text}`.trim()}
-              onClick={() => {
+              onClick={async () => {
                 // Blank rows delete silently; typed text asks first.
-                if (sub.text.trim() && !confirm('Remove this subtask?')) return
+                if (sub.text.trim()) {
+                  const ok = await confirmDialog({
+                    title: 'Remove this subtask?',
+                    message: `"${sub.text.trim()}" will be removed.`,
+                    confirmLabel: 'Remove',
+                    tone: 'danger',
+                  })
+                  if (!ok) return
+                }
                 removeSubtask(date, goal.id, sub.id)
               }}
               className="hit-halo mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-btn text-muted transition-colors duration-150 ease-click hover:text-alert"

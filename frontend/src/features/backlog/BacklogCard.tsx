@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { Badge } from '../../components/Badge'
 import { Card } from '../../components/Card'
 import { ageLabel, formatDisplayDate } from '../../lib/engine/dates'
+import { confirmDialog } from '../../lib/confirm'
 import { fmtDuration } from '../../lib/engine/time'
 import { XIcon } from '../today/icons'
 import { useAppStore } from '../../store/useAppStore'
@@ -87,10 +88,14 @@ export function BacklogCard({ item, index, today }: BacklogCardProps) {
         <button
           type="button"
           aria-label={`Remove "${item.topic}" from backlog`}
-          onClick={() => {
-            if (confirm('Remove this from the backlog? This cannot be undone.')) {
-              deleteBacklogItem(index)
-            }
+          onClick={async () => {
+            const ok = await confirmDialog({
+              title: 'Remove from backlog?',
+              message: `"${item.topic}" will be removed. This can't be undone.`,
+              confirmLabel: 'Remove',
+              tone: 'danger',
+            })
+            if (ok) deleteBacklogItem(index)
           }}
           className="inline-flex items-center gap-1 rounded-btn px-1.5 py-0.5 text-xs text-muted transition-colors duration-150 ease-click hover:text-alert"
         >

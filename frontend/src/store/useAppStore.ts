@@ -349,6 +349,12 @@ export const useAppStore = create<AppState & InternalActions>()(
         mutate((d, t) => {
           backlogEngine.moveToBacklog(d, date, goalId, t)
         }),
+      bulkMoveToBacklog: (date, goalIds) =>
+        mutate((d, t) => {
+          backlogEngine.bulkMoveToBacklog(d, date, goalIds, t)
+        }),
+      restoreToDay: (date, goalIds) =>
+        mutate((d, t) => backlogEngine.restoreToDay(d, date, goalIds, t)),
       scheduleFromBacklog: (index, date) =>
         mutate((d, t) => backlogEngine.scheduleFromBacklog(d, index, date, t)),
       deleteBacklogItem: (index) => mutate((d) => backlogEngine.deleteBacklogItem(d, index)),

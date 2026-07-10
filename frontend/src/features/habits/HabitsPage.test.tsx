@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ConfirmDialogHost } from '../../components/ConfirmDialog'
+import { useConfirmStore } from '../../lib/confirm'
 import { makeHabit, makeSnapshot, TODAY } from '../../lib/engine/testFactories'
 import { useAppStore } from '../../store/useAppStore'
 import type { HabitTemplate } from '../../types/domain'
@@ -10,6 +12,7 @@ const initialState = useAppStore.getState()
 
 afterEach(() => {
   useAppStore.setState(initialState, true)
+  useConfirmStore.setState({ pending: null })
   vi.unstubAllGlobals()
 })
 
@@ -137,12 +140,14 @@ describe('HabitCard delete', () => {
     const deleteHabit = vi.fn()
     seedStore([habit])
     useAppStore.setState({ deleteHabit })
-    // happy-dom ships no confirm(); stub the global the component calls.
-    const confirmFn = vi.fn().mockReturnValue(true)
-    vi.stubGlobal('confirm', confirmFn)
-    render(<HabitsPage />)
+    render(
+      <>
+        <HabitsPage />
+        <ConfirmDialogHost />
+      </>,
+    )
     await userEvent.click(screen.getByRole('button', { name: 'Delete habit "Yoga"' }))
-    expect(confirmFn).toHaveBeenCalledWith('Stop this habit? Days already logged keep their record.')
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop habit' }))
     expect(deleteHabit).toHaveBeenCalledWith(habit.id)
   })
 
@@ -150,9 +155,14 @@ describe('HabitCard delete', () => {
     const deleteHabit = vi.fn()
     seedStore([makeHabit({ topic: 'Yoga' })])
     useAppStore.setState({ deleteHabit })
-    vi.stubGlobal('confirm', vi.fn().mockReturnValue(false))
-    render(<HabitsPage />)
+    render(
+      <>
+        <HabitsPage />
+        <ConfirmDialogHost />
+      </>,
+    )
     await userEvent.click(screen.getByRole('button', { name: 'Delete habit "Yoga"' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
     expect(deleteHabit).not.toHaveBeenCalled()
   })
 })

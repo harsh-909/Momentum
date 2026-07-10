@@ -241,6 +241,34 @@
   animation: save-chip-fade 2.4s var(--ease-click) forwards;
 }
 
+/* ConfirmDialog: backdrop fades in, panel lifts in slightly. */
+@keyframes confirm-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes confirm-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.confirm-overlay {
+  background: color-mix(in srgb, var(--color-dial) 55%, transparent);
+  backdrop-filter: blur(2px);
+  animation: confirm-overlay-in 150ms var(--ease-click) forwards;
+}
+.confirm-panel {
+  animation: confirm-panel-in 160ms var(--ease-sweep) forwards;
+}
+
 /* AuthGate splash: slow pulsing tick ring. */
 @keyframes splash-pulse {
   0%,
