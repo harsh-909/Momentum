@@ -33,10 +33,12 @@ export interface GoalListProps {
   date: DateStr
   goals: Goal[]
   readonly: boolean
+  /** Whether completion can be toggled (today/future, plus yesterday's grace). */
+  checkable: boolean
   selection?: GoalListSelection
 }
 
-export function GoalList({ date, goals, readonly, selection }: GoalListProps) {
+export function GoalList({ date, goals, readonly, checkable, selection }: GoalListProps) {
   const reorderGoal = useAppStore((s) => s.reorderGoal)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -64,6 +66,7 @@ export function GoalList({ date, goals, readonly, selection }: GoalListProps) {
               date={date}
               goal={goal}
               readonly={readonly}
+              checkable={checkable}
               selection={
                 selection && {
                   active: selection.active,

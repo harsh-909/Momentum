@@ -7,7 +7,7 @@
  * is a read-only past day.
  */
 import { uid } from '../id'
-import { isReadonly } from './dates'
+import { isCheckable, isReadonly } from './dates'
 import { clampHours, hmToHours } from './time'
 import type { DateStr, Goal, Snapshot, Subtask } from '../../types/domain'
 import type { NewGoalInput } from '../../store/types'
@@ -68,7 +68,9 @@ export function addGoal(data: Snapshot, date: DateStr, input: NewGoalInput, toda
  * Returns true iff the goal just became completed (confetti trigger).
  */
 export function toggleGoal(data: Snapshot, date: DateStr, goalId: string, today: DateStr): boolean {
-  if (isReadonly(date, today)) return false
+  // Check-off is allowed on today/future AND yesterday (the grace window);
+  // every other mutator below stays hard-gated on isReadonly.
+  if (!isCheckable(date, today)) return false
   const g = findGoal(data, date, goalId)
   if (!g) return false
   g.completed = !g.completed
@@ -92,7 +94,8 @@ export function toggleSubtask(
   subtaskId: string,
   today: DateStr,
 ): void {
-  if (isReadonly(date, today)) return
+  // Subtask check-off shares the goal check-off grace window (yesterday too).
+  if (!isCheckable(date, today)) return
   const g = findGoal(data, date, goalId)
   if (!g) return
   const st = g.subtasks.find((s) => s.id === subtaskId)

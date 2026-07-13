@@ -37,10 +37,12 @@ export interface GoalCardProps {
   date: DateStr
   goal: Goal
   readonly: boolean
+  /** Whether the check toggle is live (today/future, plus yesterday's grace). */
+  checkable: boolean
   selection?: GoalSelection
 }
 
-export function GoalCard({ date, goal, readonly, selection }: GoalCardProps) {
+export function GoalCard({ date, goal, readonly, checkable, selection }: GoalCardProps) {
   const editing = useAppStore((s) => s.ui.editingGoalId) === goal.id
   const toggleGoal = useAppStore((s) => s.toggleGoal)
   const deleteGoal = useAppStore((s) => s.deleteGoal)
@@ -120,7 +122,7 @@ export function GoalCard({ date, goal, readonly, selection }: GoalCardProps) {
         <span ref={checkRef} className="mt-0.5 shrink-0">
           <CheckToggle
             checked={goal.completed}
-            disabled={readonly || selecting}
+            disabled={!checkable || selecting}
             label={goal.topic}
             onChange={handleToggle}
           />
@@ -166,7 +168,7 @@ export function GoalCard({ date, goal, readonly, selection }: GoalCardProps) {
               )}
             </div>
 
-            <SubtaskList date={date} goal={goal} readonly={readonly} />
+            <SubtaskList date={date} goal={goal} readonly={readonly} checkable={checkable} />
 
             {goal.completed && (
               <div className="mt-2.5 space-y-1">

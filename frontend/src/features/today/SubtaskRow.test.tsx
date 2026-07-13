@@ -20,7 +20,7 @@ describe('SubtaskRow', () => {
       ],
     })
     seedStore({ goals: { [TODAY]: [goal] } })
-    render(<SubtaskList date={TODAY} goal={goal} readonly={false} />)
+    render(<SubtaskList date={TODAY} goal={goal} readonly={false} checkable={true} />)
 
     expect(screen.getByText('took')).toBeInTheDocument()
     expect(screen.getByLabelText('took done step hours')).toBeInTheDocument()
@@ -32,7 +32,7 @@ describe('SubtaskRow', () => {
     const sub = makeSubtask({ text: 'step', completed: true, loggedHours: null })
     const goal = makeGoal({ subtasks: [sub] })
     seedStore({ goals: { [TODAY]: [goal] }, actions: { logSubtaskTime } })
-    render(<SubtaskList date={TODAY} goal={goal} readonly={false} />)
+    render(<SubtaskList date={TODAY} goal={goal} readonly={false} checkable={true} />)
 
     // A single change event: the store action is a spy, so the controlled
     // input never re-renders between keystrokes.
@@ -45,7 +45,7 @@ describe('SubtaskRow', () => {
     const sub = makeSubtask({ text: 'step' })
     const goal = makeGoal({ subtasks: [sub] })
     seedStore({ goals: { [TODAY]: [goal] }, actions: { toggleSubtask } })
-    render(<SubtaskList date={TODAY} goal={goal} readonly={false} />)
+    render(<SubtaskList date={TODAY} goal={goal} readonly={false} checkable={true} />)
 
     await userEvent.click(screen.getByRole('checkbox', { name: 'step' }))
     expect(toggleSubtask).toHaveBeenCalledWith(TODAY, goal.id, sub.id)
@@ -56,16 +56,27 @@ describe('SubtaskRow', () => {
       subtasks: [makeSubtask({ text: 'step', completed: true, loggedHours: 0.5 })],
     })
     seedStore({ goals: { [TODAY]: [goal] } })
-    render(<SubtaskList date={TODAY} goal={goal} readonly={true} />)
+    render(<SubtaskList date={TODAY} goal={goal} readonly={true} checkable={false} />)
 
     expect(screen.getByRole('checkbox', { name: 'step' })).toBeDisabled()
+    expect(screen.queryByText('took')).not.toBeInTheDocument()
+  })
+
+  it('yesterday (readonly + checkable): live checkbox but still no time input', () => {
+    const goal = makeGoal({
+      subtasks: [makeSubtask({ text: 'step', completed: true, loggedHours: 0.5 })],
+    })
+    seedStore({ goals: { [TODAY]: [goal] } })
+    render(<SubtaskList date={TODAY} goal={goal} readonly={true} checkable={true} />)
+
+    expect(screen.getByRole('checkbox', { name: 'step' })).toBeEnabled()
     expect(screen.queryByText('took')).not.toBeInTheDocument()
   })
 
   it('strikes through completed subtask text', () => {
     const goal = makeGoal({ subtasks: [makeSubtask({ text: 'finished', completed: true })] })
     seedStore({ goals: { [TODAY]: [goal] } })
-    render(<SubtaskList date={TODAY} goal={goal} readonly={false} />)
+    render(<SubtaskList date={TODAY} goal={goal} readonly={false} checkable={true} />)
     expect(screen.getByText('finished')).toHaveClass('line-through')
   })
 })
