@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { DialTicks } from '../../components/EmptyState'
 import { useAppStore } from '../../store/useAppStore'
+import { LandingPage } from '../marketing/LandingPage'
 import { LoginCard } from './LoginCard'
 
 /** Boot splash while a stored token is validated: wordmark + pulsing tick ring. */
@@ -14,17 +16,20 @@ function Splash() {
 }
 
 /**
- * Session gate: splash while checking, centered LoginCard when anonymous,
+ * Session gate: splash while checking; when anonymous, the public landing
+ * page first, then the sign-in card once the visitor chooses to continue;
  * the app (children) once authed.
  */
 export function AuthGate({ children }: { children: ReactNode }) {
   const status = useAppStore((s) => s.session.status)
+  const [showLogin, setShowLogin] = useState(false)
 
   if (status === 'checking') return <Splash />
   if (status === 'anon') {
+    if (!showLogin) return <LandingPage onGetStarted={() => setShowLogin(true)} />
     return (
       <div className="flex min-h-dvh items-center justify-center p-4">
-        <LoginCard />
+        <LoginCard onBack={() => setShowLogin(false)} />
       </div>
     )
   }

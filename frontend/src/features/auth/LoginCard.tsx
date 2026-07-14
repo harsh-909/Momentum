@@ -35,7 +35,7 @@ function messageFor(err: unknown, mode: Mode): string {
 const FIELD_CLS =
   'w-full rounded-btn border border-line bg-dial px-3 py-2 text-sm text-ink placeholder:text-muted transition-colors duration-150 ease-click focus:border-accent focus:outline-none disabled:opacity-50'
 
-export function LoginCard() {
+export function LoginCard({ onBack }: { onBack?: () => void } = {}) {
   const login = useAppStore((s) => s.login)
   const signup = useAppStore((s) => s.signup)
 
@@ -75,6 +75,15 @@ export function LoginCard() {
 
   return (
     <Card padding="lg" className="w-full max-w-sm">
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          className="mb-3 inline-flex items-center gap-1 font-display text-xs label-caps text-muted transition-colors duration-150 ease-click hover:text-ink"
+        >
+          <span aria-hidden="true">←</span> Back
+        </button>
+      )}
       <div className="font-display text-xs label-caps text-accent-text">Momentum</div>
       <h1 className="mt-1 font-display text-section font-semibold text-ink">Sign in</h1>
       <hr className="tick-rule my-4" />

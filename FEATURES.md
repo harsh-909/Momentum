@@ -8,6 +8,11 @@ The interface is organized into five tabs: **Today**, **Backlog**, **Habits**, *
 
 > This file documents what the app does. Work in flight lives in `workMatter.md`; wire/engine contracts in `CONTRACT.md`. The 1.x local-only app is preserved under `legacy/`.
 
+## Landing page
+
+- **Public home page** - visitors who aren't signed in first see a marketing page: a hero with the product promise and a decorative Day Dial, a capabilities grid (Day Dial, habits, backlog & carry-over, plans, history, metrics), a three-step "how it works", and clear calls to action.
+- **Get started / Log in** - any call to action reveals the sign-in card; a **Back** link returns to the home page. Theme toggle is available here too. No new routing library - it's a lightweight in-place switch.
+
 ## Accounts & data
 
 - **Username + password accounts** - passwords are hashed with argon2id; sessions are opaque bearer tokens with a 30-day sliding expiry. Usernames are lowercase letters/numbers/`-`/`_` (max 32).

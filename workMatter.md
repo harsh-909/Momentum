@@ -20,7 +20,7 @@ Every feature we **add / update / remove** is a checkbox item across three secti
 
 ## 🚧 In Progress
 
-*(empty - pick up the next item from Not Completed)*
+- [ ] **Public landing / home page** - anonymous visitors now see a marketing home page (hero with a decorative Day Dial, capabilities grid, how-it-works, CTAs) before sign-in, instead of landing straight on the login box. "Get started" / "Log in" reveal the existing sign-in card; a "Back" link returns to the home page. First step ahead of the mandatory-email/verification work.
 
 ## 📋 Not Completed
 
