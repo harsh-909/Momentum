@@ -6,7 +6,7 @@ Version 2.0 is a client-server web app: a React 19 + TypeScript frontend (Vite, 
 It runs locally with one command (`npm run dev`, SQLite, no cloud) and deploys free to Vercel + Render + Neon (see `DEPLOYMENT.md`).
 The interface is organized into five tabs: **Today**, **Backlog**, **Habits**, **History**, and **Momentum** (metrics).
 
-> This file documents what the app does. Work in flight lives in `workMatter.md`; wire/engine contracts in `CONTRACT.md`. The 1.x local-only app is preserved under `legacy/`.
+> This file documents what the app does. Work in flight lives in `workMatter.md`; wire/engine contracts in `CONTRACT.md`. The 1.x local-only app is preserved in git history (formerly under `legacy/`).
 
 ## Accounts & data
 

@@ -27,7 +27,7 @@ This file only adds what is Momentum-specific, and Momentum facts override gener
 
 ## Momentum facts (skip generic recon; verify only if something fails)
 
-**Stack**: `frontend/` React 19 + Vite + TS + Zustand (ALL business logic in pure modules under `frontend/src/lib/engine/`), `backend/` FastAPI + SQLAlchemy async (SQLite dev, Postgres prod). `legacy/` is the frozen 1.x app - OUT of scope, never test or modify it.
+**Stack**: `frontend/` React 19 + Vite + TS + Zustand (ALL business logic in pure modules under `frontend/src/lib/engine/`), `backend/` FastAPI + SQLAlchemy async (SQLite dev, Postgres prod). (The old 1.x app formerly under `legacy/` has been removed and is never in scope.)
 
 **Test oracles**: `FEATURES.md` (product behavior), `CONTRACT.md` (API shapes + engine signatures), the domain invariants section of `CLAUDE.md` (3am day boundary, partial-credit scoring with the 99% cap, 70% streak with zero-goal break, today-only habit seeding, carry-over watermark, goal/subtask coupling, read-only past days).
 

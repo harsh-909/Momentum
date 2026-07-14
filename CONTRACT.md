@@ -135,4 +135,4 @@ isEvening(h: number): boolean             // h >= 20 || h < 4
 
 ## Porting reference
 
-The v1 logic being ported lives in `legacy/app.js`; behavior inventory in `FEATURES.md`; v1 tests in `legacy/tests/app.test.js`.
+The v1 logic that was ported is preserved in git history (the former `legacy/app.js` and `legacy/tests/app.test.js`); the behavior inventory is in `FEATURES.md`.
