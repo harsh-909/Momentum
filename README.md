@@ -24,6 +24,7 @@ backend/    FastAPI + SQLAlchemy 2 async + Alembic (SQLite locally, Postgres in 
 legacy/     Frozen 1.x app (reference for the engine port)
 CONTRACT.md The wire + engine contracts the workstreams built against
 DEPLOYMENT.md  Step-by-step free-tier deploy (Neon + Render + Vercel)
+STACK_RATIONALE.md  Why the stack is shaped this way (Postgres+JSONB, Neon, custom auth)
 ```
 
 ## Local development (Windows-friendly, no Docker)

@@ -19,9 +19,10 @@ Accounts needed: GitHub (repo must be pushed), Neon, Render, Vercel, cron-job.or
 2. From the project dashboard copy TWO connection strings:
    - The **pooled** string (host contains `-pooler`). Used by the app at runtime.
    - The **direct** string (no `-pooler`). Used only by Alembic migrations.
-3. Rewrite both to the async driver scheme the app expects:
-   `postgresql://...` becomes `postgresql+asyncpg://...` and drop any `?sslmode=require` suffix in favor of `?ssl=require`.
-   Example: `postgresql+asyncpg://user:pass@ep-xxx-pooler.ap-southeast-1.aws.neon.tech/neondb?ssl=require`
+3. Paste both strings **verbatim** - no rewriting needed. The app normalizes the
+   driver prefix (`postgresql://` -> `postgresql+asyncpg://`) and the libpq-only
+   query params (`sslmode`/`channel_binding`) at load time, so Neon's copy-paste
+   string works as-is for both `DATABASE_URL` and `MIGRATIONS_DATABASE_URL`.
 4. Optional but recommended: create a `dev` branch in Neon for pre-deploy testing against real Postgres.
 
 Why Neon over Supabase: Neon auto-resumes from idle in under a second; Supabase free pauses the whole project after a week of inactivity and needs a manual dashboard restore.
