@@ -7,10 +7,13 @@ client and are stored verbatim. The 2 MB body cap bounds abuse.
 import re
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+# Verification codes are exactly 6 digits.
+CODE_RE = re.compile(r"^\d{6}$")
 
 
 def normalize_username(name: str) -> str:
@@ -21,7 +24,16 @@ def normalize_username(name: str) -> str:
     return clean
 
 
+def normalize_email(email: str) -> str:
+    """Lowercase + strip. Consumer-grade normalization (local-part case is
+    technically significant but treating addresses case-insensitively is the
+    universal expectation and keeps 'one account per email' intuitive)."""
+    return email.strip().lower()
+
+
 class Credentials(BaseModel):
+    """Login input."""
+
     username: str
     password: str = Field(min_length=8, max_length=128)
 
@@ -31,18 +43,67 @@ class Credentials(BaseModel):
         return normalize_username(v)
 
 
+class SignupIn(BaseModel):
+    """Signup input - like Credentials but email is now mandatory."""
+
+    username: str
+    password: str = Field(min_length=8, max_length=128)
+    email: EmailStr
+
+    @field_validator("username")
+    @classmethod
+    def _normalize_username(cls, v: str) -> str:
+        return normalize_username(v)
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        return normalize_email(v)
+
+
+class VerifyIn(BaseModel):
+    pendingToken: str = Field(min_length=1, max_length=128)
+    code: str
+
+    @field_validator("code")
+    @classmethod
+    def _check_code(cls, v: str) -> str:
+        v = v.strip()
+        if not CODE_RE.fullmatch(v):
+            raise ValueError("code must be 6 digits")
+        return v
+
+
+class PendingTokenIn(BaseModel):
+    pendingToken: str = Field(min_length=1, max_length=128)
+
+
+class AddEmailIn(BaseModel):
+    pendingToken: str = Field(min_length=1, max_length=128)
+    email: EmailStr
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        return normalize_email(v)
+
+
 class UserOut(BaseModel):
     username: str
+    email: str | None = None
 
 
 class AuthOut(BaseModel):
     token: str
     user: UserOut
     expiresAt: str
+    emailVerified: bool = True
 
 
 class MeOut(BaseModel):
     username: str
+    email: str | None
+    emailVerified: bool
     createdAt: str
 
 

@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Column,
     DateTime,
     ForeignKey,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     Table,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -35,8 +37,40 @@ users = Table(
     Column("id", _pk_type, primary_key=True, autoincrement=True),
     Column("username", Text, nullable=False, unique=True),
     Column("password_hash", Text, nullable=False),
+    # Nullable so pre-email accounts keep loading; a value is required before
+    # the account can be used (verify-on-next-login). Stored lowercased.
+    Column("email", Text, nullable=True),
+    Column("email_verified", Boolean, nullable=False, server_default="0"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # One account per *verified* email; unverified/abandoned signups may reuse
+    # an address. Partial unique index expressed for both dialects.
+    Index(
+        "users_verified_email_uq",
+        "email",
+        unique=True,
+        sqlite_where=text("email_verified = 1"),
+        postgresql_where=text("email_verified"),
+    ),
+)
+
+# Pending email-verification codes. One active row per user (a new code deletes
+# the old); keyed by the hash of an opaque "pending token" the client echoes
+# back. The 6-digit code is stored as an HMAC, never in plaintext.
+email_verifications = Table(
+    "email_verifications",
+    metadata,
+    Column("token_hash", Text, primary_key=True),
+    Column("user_id", _pk_type, ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    # Both null while a logged-in pre-email account is still choosing an address
+    # (the pending token binds to the user; add-email fills these in).
+    Column("code_hash", Text, nullable=True),
+    # The address this code was sent to (the user's pending email at send time).
+    Column("email", Text, nullable=True),
+    Column("attempts", Integer, nullable=False, server_default="0"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Index("email_verifications_user_id_idx", "user_id"),
 )
 
 snapshots = Table(

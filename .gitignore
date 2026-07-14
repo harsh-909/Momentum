@@ -24,6 +24,7 @@ frontend/dist/
 backend/.venv/
 backend/dev.db
 backend/test.db
+backend/.dev_codes.json
 .pytest_cache/
 coverage/
 

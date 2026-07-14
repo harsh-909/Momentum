@@ -24,8 +24,30 @@ async def lifespan(app: FastAPI):
     yield
 
 
+def _require_production_secrets(settings) -> None:
+    """Fail fast on a misconfigured production deploy rather than silently
+    falling back to insecure dev behavior (public HMAC pepper; verification
+    codes logged to disk). Dev and test are exempt."""
+    if settings.env in ("development", "test"):
+        return
+    missing = [
+        name
+        for name, value in (
+            ("VERIFICATION_SECRET", settings.verification_secret),
+            ("RESEND_API_KEY", settings.resend_api_key),
+        )
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(
+            f"Refusing to start in env={settings.env!r}: missing required "
+            f"settings {', '.join(missing)}. Set them, or run with ENV=development."
+        )
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
+    _require_production_secrets(settings)
     app = FastAPI(title="Momentum API", version="2.0.0", lifespan=lifespan)
     install_exception_handlers(app)
 

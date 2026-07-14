@@ -98,7 +98,7 @@ export function getScheduler(): SaveScheduler {
 
 interface InternalActions {
   hydrate(snapshot: Snapshot, version: number): void
-  enterProfile(username: string, raw: unknown, version: number): void
+  enterProfile(username: string, raw: unknown, version: number, email?: string | null): void
 }
 
 export const useAppStore = create<AppState & InternalActions>()(
@@ -148,7 +148,7 @@ export const useAppStore = create<AppState & InternalActions>()(
         })
       },
 
-      enterProfile: (username, raw, version) => {
+      enterProfile: (username, raw, version, email = null) => {
         const today = currentDay(new Date())
         const snapshot =
           raw === null || raw === undefined
@@ -166,7 +166,7 @@ export const useAppStore = create<AppState & InternalActions>()(
         })
         const changed = JSON.stringify(get().data) !== before
         set((s) => {
-          s.session.user = { username }
+          s.session.user = { username, email }
           s.session.status = 'authed'
         })
         rememberUser(username)
@@ -184,9 +184,12 @@ export const useAppStore = create<AppState & InternalActions>()(
         try {
           const who = await authApi.me()
           const res = await loadData()
-          get().enterProfile(who.username, res.data, res.version)
+          get().enterProfile(who.username, res.data, res.version, who.email)
         } catch (err) {
-          if (err instanceof ApiError && err.status !== 401 && err.status !== 0) {
+          if (err instanceof ApiError && err.status === 401) {
+            // Dead/expired token: drop it so it isn't attached to every request.
+            setToken(null)
+          } else if (err instanceof ApiError && err.status !== 0) {
             console.error('checkAuth failed', err)
           }
           set((s) => {
@@ -198,14 +201,43 @@ export const useAppStore = create<AppState & InternalActions>()(
 
       login: async (username, password) => {
         const res = await authApi.login(username, password)
-        const loaded = await loadData()
-        get().enterProfile(res.user.username, loaded.data, loaded.version)
+        if (res.kind === 'authed') {
+          // The token is already stored; a data-load hiccup must NOT bounce the
+          // user back to the login error. Enter the session regardless - the
+          // debounced save + version compare-and-swap reconcile any empty state.
+          const loaded = await loadData().catch(() => null)
+          get().enterProfile(
+            res.user.username,
+            loaded?.data ?? null,
+            loaded?.version ?? 0,
+            res.user.email,
+          )
+        }
+        // 'verify' / 'addEmail' outcomes are handled by the auth UI flow.
+        return res
       },
 
-      signup: async (username, password) => {
-        const res = await authApi.signup(username, password)
-        get().enterProfile(res.user.username, null, 0)
+      signup: async (username, password, email) => authApi.signup(username, password, email),
+
+      verifyEmail: async (pendingToken, code) => {
+        const res = await authApi.verifyEmail(pendingToken, code)
+        // Verification succeeded and the token is stored; the server has already
+        // consumed the one-time code. If loading data now fails, enter the app
+        // anyway rather than re-showing "wrong code" for a code that's gone.
+        const loaded = await loadData().catch(() => null)
+        get().enterProfile(
+          res.user.username,
+          loaded?.data ?? null,
+          loaded?.version ?? 0,
+          res.user.email,
+        )
       },
+
+      resendCode: async (pendingToken) => {
+        await authApi.resendCode(pendingToken)
+      },
+
+      addEmail: async (pendingToken, email) => authApi.addEmail(pendingToken, email),
 
       logout: async () => {
         await scheduler.flushNow()

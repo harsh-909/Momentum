@@ -1,21 +1,30 @@
 import { useRef, useState } from 'react'
+import type { LoginResult, SignupResult } from '../../api/auth'
 import { ApiError } from '../../api/client'
 import { Card } from '../../components/Card'
 import { useAppStore } from '../../store/useAppStore'
 import { USERNAME_RE } from '../../types/domain'
 import { getRecentUsers, rememberUser } from './recentUsers'
+import { BACK_BTN_CLS, FIELD_CLS, PRIMARY_BTN_CLS } from './styles'
 
 const MIN_PASSWORD = 8
+// Light client-side check; the server (EmailStr) is the real validator.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 type Mode = 'login' | 'signup'
+
+/** Non-authed outcome that hands control to the verification flow. */
+export type AuthPending = Exclude<LoginResult, { kind: 'authed' }>
 
 function messageFor(err: unknown, mode: Mode): string {
   if (err instanceof ApiError) {
     switch (err.code) {
       case 'invalid_credentials':
-        return 'Wrong username or password - or sign up if you are new.'
+        return 'Wrong username or password - or create an account if you are new.'
       case 'username_unavailable':
         return 'That name is taken - log in instead?'
+      case 'invalid_input':
+        return 'Check your details: username, password (8+ chars), and a valid email.'
       case 'network_error':
         return 'Cannot reach the server'
       case 'rate_limited': {
@@ -32,27 +41,46 @@ function messageFor(err: unknown, mode: Mode): string {
   return mode === 'login' ? 'Could not log in - try again' : 'Could not sign up - try again'
 }
 
-const FIELD_CLS =
-  'w-full rounded-btn border border-line bg-dial px-3 py-2 text-sm text-ink placeholder:text-muted transition-colors duration-150 ease-click focus:border-accent focus:outline-none disabled:opacity-50'
-
-export function LoginCard({ onBack }: { onBack?: () => void } = {}) {
+/**
+ * Sign-in / create-account card. A single mode toggle switches between logging
+ * in (username + password) and creating an account (adds a required email).
+ * Neither path drops the user straight into the app anymore: a successful
+ * login of a verified account authenticates via the store; every other outcome
+ * (new signup, unverified login, pre-email account) is surfaced through
+ * `onPending` so the parent can show the code / add-email step.
+ */
+export function LoginCard({
+  initialMode = 'login',
+  onBack,
+  onPending,
+}: {
+  initialMode?: Mode
+  onBack?: () => void
+  onPending?: (result: AuthPending) => void
+} = {}) {
   const login = useAppStore((s) => s.login)
   const signup = useAppStore((s) => s.signup)
 
+  const [mode, setMode] = useState<Mode>(initialMode)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [email, setEmail] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState<Mode | null>(null)
-  // Which button the user is heading for - drives the password autocomplete
-  // hint so password managers offer save-new vs fill-existing correctly.
-  const [mode, setMode] = useState<Mode>('login')
-  // Read once on mount; the list only changes after a successful submit.
+  const [busy, setBusy] = useState(false)
   const [recent] = useState(getRecentUsers)
   const passwordRef = useRef<HTMLInputElement>(null)
 
-  const submit = async (mode: Mode) => {
+  const isSignup = mode === 'signup'
+
+  const switchMode = () => {
+    setMode((m) => (m === 'login' ? 'signup' : 'login'))
+    setError(null)
+  }
+
+  const submit = async () => {
     if (busy) return
     const name = username.trim().toLowerCase()
+    const mail = email.trim().toLowerCase()
     setError(null)
     if (!USERNAME_RE.test(name)) {
       setError('Usernames are 1-32 characters: lowercase letters, numbers, "-" or "_"')
@@ -62,33 +90,43 @@ export function LoginCard({ onBack }: { onBack?: () => void } = {}) {
       setError(`Password must be at least ${MIN_PASSWORD} characters`)
       return
     }
-    setBusy(mode)
+    if (isSignup && !EMAIL_RE.test(mail)) {
+      setError('Enter a valid email address')
+      return
+    }
+    setBusy(true)
     try {
-      await (mode === 'login' ? login(name, password) : signup(name, password))
-      rememberUser(name)
+      if (isSignup) {
+        const result: SignupResult = await signup(name, password, mail)
+        rememberUser(name)
+        onPending?.(result)
+      } else {
+        const result = await login(name, password)
+        rememberUser(name)
+        if (result.kind !== 'authed') onPending?.(result)
+        // 'authed' -> the store flips session.status and this card unmounts.
+      }
     } catch (err) {
       setError(messageFor(err, mode))
     } finally {
-      setBusy(null)
+      setBusy(false)
     }
   }
 
   return (
     <Card padding="lg" className="w-full max-w-sm">
       {onBack && (
-        <button
-          type="button"
-          onClick={onBack}
-          className="mb-3 inline-flex items-center gap-1 font-display text-xs label-caps text-muted transition-colors duration-150 ease-click hover:text-ink"
-        >
+        <button type="button" onClick={onBack} className={BACK_BTN_CLS}>
           <span aria-hidden="true">←</span> Back
         </button>
       )}
       <div className="font-display text-xs label-caps text-accent-text">Momentum</div>
-      <h1 className="mt-1 font-display text-section font-semibold text-ink">Sign in</h1>
+      <h1 className="mt-1 font-display text-section font-semibold text-ink">
+        {isSignup ? 'Create your account' : 'Sign in'}
+      </h1>
       <hr className="tick-rule my-4" />
 
-      {recent.length > 0 && (
+      {!isSignup && recent.length > 0 && (
         <div className="mb-4">
           <div className="mb-1.5 font-display text-xs label-caps text-muted">Recent</div>
           <div className="flex flex-wrap gap-1.5">
@@ -109,11 +147,11 @@ export function LoginCard({ onBack }: { onBack?: () => void } = {}) {
         </div>
       )}
 
-      {/* Enter anywhere in the form submits as a login. */}
       <form
+        noValidate
         onSubmit={(e) => {
           e.preventDefault()
-          void submit('login')
+          void submit()
         }}
         className="space-y-3"
       >
@@ -123,7 +161,7 @@ export function LoginCard({ onBack }: { onBack?: () => void } = {}) {
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value.toLowerCase())}
-            disabled={busy !== null}
+            disabled={busy}
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
@@ -131,6 +169,24 @@ export function LoginCard({ onBack }: { onBack?: () => void } = {}) {
             className={FIELD_CLS}
           />
         </label>
+
+        {isSignup && (
+          <label className="block">
+            <span className="mb-1 block font-display text-xs label-caps text-muted">Email</span>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={busy}
+              autoComplete="email"
+              autoCapitalize="none"
+              spellCheck={false}
+              placeholder="you@example.com"
+              className={FIELD_CLS}
+            />
+          </label>
+        )}
+
         <label className="block">
           <span className="mb-1 block font-display text-xs label-caps text-muted">Password</span>
           <input
@@ -138,8 +194,8 @@ export function LoginCard({ onBack }: { onBack?: () => void } = {}) {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            disabled={busy !== null}
-            autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+            disabled={busy}
+            autoComplete={isSignup ? 'new-password' : 'current-password'}
             placeholder="8+ characters"
             className={FIELD_CLS}
           />
@@ -151,28 +207,28 @@ export function LoginCard({ onBack }: { onBack?: () => void } = {}) {
           </p>
         )}
 
-        <div className="flex gap-2 pt-1">
-          <button
-            type="submit"
-            onMouseDown={() => setMode('login')}
-            onFocus={() => setMode('login')}
-            disabled={busy !== null}
-            className="flex-1 rounded-btn bg-accent-fill px-4 py-2 text-sm font-semibold text-on-accent transition-opacity duration-150 ease-click hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {busy === 'login' ? 'Logging in…' : 'Log in'}
-          </button>
-          <button
-            type="button"
-            onMouseDown={() => setMode('signup')}
-            onFocus={() => setMode('signup')}
-            onClick={() => void submit('signup')}
-            disabled={busy !== null}
-            className="flex-1 rounded-btn border border-line px-4 py-2 text-sm font-medium text-ink transition-colors duration-150 ease-click hover:border-muted disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {busy === 'signup' ? 'Signing up…' : 'Sign up'}
-          </button>
-        </div>
+        <button type="submit" disabled={busy} className={`${PRIMARY_BTN_CLS} w-full`}>
+          {busy
+            ? isSignup
+              ? 'Creating…'
+              : 'Logging in…'
+            : isSignup
+              ? 'Create account'
+              : 'Log in'}
+        </button>
       </form>
+
+      <div className="mt-4 text-center text-xs text-muted">
+        {isSignup ? 'Already have an account?' : 'New to Momentum?'}{' '}
+        <button
+          type="button"
+          onClick={switchMode}
+          disabled={busy}
+          className="font-medium text-accent-text hover:underline disabled:opacity-60"
+        >
+          {isSignup ? 'Log in' : 'Create an account'}
+        </button>
+      </div>
     </Card>
   )
 }

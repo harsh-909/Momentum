@@ -11,6 +11,7 @@
  *   ALSO disable those controls (isReadonly(date, today)).
  * - Drag state lives inside dnd-kit, edit state in `ui` - never in `data`.
  */
+import type { LoginResult, SignupResult, VerifyResult } from '../api/auth'
 import type {
   DateStr,
   Goal,
@@ -49,7 +50,7 @@ export interface PlanDraft {
 }
 
 export interface SessionSlice {
-  user: { username: string } | null
+  user: { username: string; email: string | null } | null
   status: 'checking' | 'anon' | 'authed'
 }
 
@@ -75,8 +76,16 @@ export interface AppState {
   // -- session ---------------------------------------------------------
   /** Validate a stored token on boot; resolves session.status. */
   checkAuth(): Promise<void>
-  login(username: string, password: string): Promise<void>
-  signup(username: string, password: string): Promise<void>
+  /** Log in. Resolves to whether we're authed, or need code / email first. */
+  login(username: string, password: string): Promise<LoginResult>
+  /** Create an account; always resolves to a pending code-verification step. */
+  signup(username: string, password: string, email: string): Promise<SignupResult>
+  /** Submit the emailed code; on success transitions the session to authed. */
+  verifyEmail(pendingToken: string, code: string): Promise<void>
+  /** Re-send the verification code for a pending token. */
+  resendCode(pendingToken: string): Promise<void>
+  /** Attach an email to a pre-email account; resolves to the verify step. */
+  addEmail(pendingToken: string, email: string): Promise<VerifyResult>
   logout(): Promise<void>
 
   // -- persistence -----------------------------------------------------

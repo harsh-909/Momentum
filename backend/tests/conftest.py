@@ -8,6 +8,11 @@ import pathlib
 
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
 os.environ["ENV"] = "test"
+# Hermetic email: force the dev (log + outbox) mailer regardless of any real
+# key in a developer's backend/.env (env vars outrank the dotenv file), so the
+# suite never attempts a real send and can read codes from the outbox.
+os.environ["RESEND_API_KEY"] = ""
+os.environ["VERIFICATION_SECRET"] = "test-pepper"
 
 import asyncio
 

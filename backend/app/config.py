@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # Verification-code policy.
     verification_code_ttl_minutes: int = 15
     verification_max_attempts: int = 5
+    # Server-side pepper: codes are stored as HMAC-SHA256(secret, code), so a
+    # leaked DB can't be brute-forced offline against the 1e6 code space. Set a
+    # strong random value in production; the dev fallback below is fine locally.
+    verification_secret: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:

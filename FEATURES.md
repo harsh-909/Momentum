@@ -15,8 +15,9 @@ The interface is organized into five tabs: **Today**, **Backlog**, **Habits**, *
 
 ## Accounts & data
 
-- **Username + password accounts** - passwords are hashed with argon2id; sessions are opaque bearer tokens with a 30-day sliding expiry. Usernames are lowercase letters/numbers/`-`/`_` (max 32).
-- **Sign up / log in** - one screen with both actions. Unknown-user and wrong-password failures are deliberately indistinguishable (no account enumeration), and auth endpoints are rate-limited.
+- **Username + password + email accounts** - passwords are hashed with argon2id; sessions are opaque bearer tokens with a 30-day sliding expiry. Usernames are lowercase letters/numbers/`-`/`_` (max 32). Every account has an email.
+- **Sign up / log in** - one card that toggles between the two. Creating an account requires a username, password, and email; unknown-user and wrong-password failures are deliberately indistinguishable (no account enumeration), and auth endpoints are rate-limited.
+- **Mandatory email verification** - signing up does not log you straight in: we email a 6-digit code and you enter it to activate the account. Codes expire (15 min), are attempt-limited, and can be resent. Only verified accounts can use the app. If you sign up with an email that already has an account, the screen looks the same but the real owner gets a "someone tried to sign up" notice instead of a code (so no one can probe who is registered). Existing accounts created before email was required are asked to add and verify an email on their next login. During local development (no email provider configured), the code is written to the server log instead of sent.
 - **Recent profiles** - the login screen offers one-tap pills for usernames previously used on this device (stored locally, never listed by the server).
 - **Switch user** - the avatar button (your initial) in the header logs out and returns to the login screen.
 - **Automatic save** - every change is saved to the server after a 400ms debounce; a header chip shows "Saving… / Saved", or "Save failed - retry" (click to retry). A pending change is flushed when the tab closes or hides.

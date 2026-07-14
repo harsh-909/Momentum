@@ -10,15 +10,20 @@ Implemented by `backend/app/routes/*`, consumed by `frontend/src/api/*` (already
 | Method | Path | Auth | Success | Errors |
 |---|---|---|---|---|
 | GET | `/api/health` | no | `{"status":"ok"}` (never touches the DB) | - |
-| POST | `/api/auth/signup` `{username, password}` | no | 201 `{token, user:{username}, expiresAt}` | 400 `invalid_input`, 409 `username_unavailable`, 429 `rate_limited` |
-| POST | `/api/auth/login` `{username, password}` | no | 200 `{token, user, expiresAt}` | 401 `invalid_credentials` (always generic), 429 |
+| POST | `/api/auth/signup` `{username, password, email}` | no | 202 `{kind:"verify", pendingToken, email}` (email masked; NO session - a code is emailed) | 400/422 `invalid_input`, 409 `username_unavailable`, 429 `rate_limited` |
+| POST | `/api/auth/verify-email` `{pendingToken, code}` | no | 200 `{kind:"authed", token, user:{username,email}, expiresAt, emailVerified:true}` | 400 `invalid_code` (wrong/expired/too many attempts - all generic), 409 `email_unavailable`, 429 |
+| POST | `/api/auth/resend-code` `{pendingToken}` | no | 202 `{ok:true}` (neutral - same for unknown tokens) | 429 |
+| POST | `/api/auth/add-email` `{pendingToken, email}` | no | 202 `{kind:"verify", pendingToken, email}` (for a pre-email account mid-login) | 400 `invalid_token`, 422 `invalid_input`, 429 |
+| POST | `/api/auth/login` `{username, password}` | no | 200 — one of: `{kind:"authed", token, user, expiresAt, emailVerified}` (verified); `{kind:"verify", pendingToken, email}` (unverified - code sent); `{kind:"addEmail", pendingToken}` (legacy account, no email yet) | 401 `invalid_credentials` (always generic), 429 |
 | POST | `/api/auth/logout` | yes | 204 | 401 `unauthorized` |
-| GET | `/api/auth/me` | yes | `{username, createdAt}` | 401 |
+| GET | `/api/auth/me` | yes | `{username, email, emailVerified, createdAt}` | 401 |
 | GET | `/api/data` | yes | `{version, updatedAt, data}`; never saved -> `{version:0, updatedAt:null, data:null}` | 401 |
 | PUT | `/api/data` `{version, data}` | yes | `{version, updatedAt}` (version incremented) | 409 `{error:"version_conflict", version, data}` (winning doc), 413 `payload_too_large`, 422 `invalid_input` |
 | GET | `/api/data/export` | yes | raw snapshot JSON, `Content-Disposition: attachment` | 401 |
 
-- Auth: `Authorization: Bearer <opaque token>`; tokens are random 32-byte urlsafe strings, stored sha256-hashed in `sessions`, 30-day sliding expiry.
+- Auth: `Authorization: Bearer <opaque token>`; tokens are random 32-byte urlsafe strings, stored sha256-hashed in `sessions`, 30-day sliding expiry. **Only verified accounts ever hold a session** - signup and unverified/legacy logins return a `pendingToken` (also random urlsafe, stored sha256-hashed in `email_verifications`), never a session token.
+- Email verification: a 6-digit code is stored as HMAC-SHA256(server pepper, code); `verify-email` compares in constant time, caps attempts (default 5) and expiry (default 15 min), and is single-use. Enumeration-safe: signup/add-email with an already-verified email return the same neutral `verify` response but email the existing owner a notice instead of a code (`decoy` pendingToken). One verified account per email (partial unique index on `users.email WHERE email_verified`); unverified/abandoned signups may reuse an address.
+- Email is mandatory: `users.email` is nullable only so pre-email (legacy/imported) accounts still load; on next login they are routed through `add-email` + `verify-email` before a session is issued.
 - Error body shape everywhere: `{"error": "<machine_code>", "detail?": "..."}`.
 - Save is compare-and-swap: `UPDATE snapshots SET doc=$1, version=version+1 WHERE user_id=$2 AND version=$3`; 0 rows -> 409 with current row. Client sends `version: 0` for the first save (INSERT).
 - Username rule (both sides, identical): `^[a-z0-9][a-z0-9_-]{0,31}$`, lowercased. Password: 8-128 chars.
