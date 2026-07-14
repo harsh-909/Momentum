@@ -9,7 +9,6 @@ Sync-style URLs (sqlite://, postgresql://) are normalized to the installed
 async drivers.
 """
 import asyncio
-import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -17,6 +16,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from app.config import get_settings, normalize_database_url
 from app.db import metadata
 
 config = context.config
@@ -27,19 +27,15 @@ target_metadata = metadata
 
 
 def _database_url() -> str:
-    url = (
-        os.environ.get("MIGRATIONS_DATABASE_URL")
-        or os.environ.get("DATABASE_URL")
-        or "sqlite+aiosqlite:///./dev.db"
+    # Migrations prefer the direct (non-pooled) URL; fall back to the app URL.
+    # Settings loads the same .env the app uses (so no secrets in the shell),
+    # and normalize_database_url() maps sync schemes to our async drivers and
+    # translates libpq-only query params (sslmode/channel_binding) so a raw Neon
+    # connection string works verbatim. Idempotent on already-normalized URLs.
+    settings = get_settings()
+    return normalize_database_url(
+        settings.migrations_database_url or settings.database_url
     )
-    # Normalize bare/sync scheme names to the async drivers we ship.
-    if url.startswith("sqlite://"):
-        url = "sqlite+aiosqlite://" + url[len("sqlite://"):]
-    elif url.startswith("postgresql://"):
-        url = "postgresql+asyncpg://" + url[len("postgresql://"):]
-    elif url.startswith("postgres://"):
-        url = "postgresql+asyncpg://" + url[len("postgres://"):]
-    return url
 
 
 def run_migrations_offline() -> None:

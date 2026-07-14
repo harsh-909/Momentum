@@ -25,8 +25,9 @@ from .config import get_settings
 
 metadata = MetaData()
 
-# BigInteger autoincrement is awkward on SQLite; Integer PKs map to 64-bit
-# rowids there while Postgres gets IDENTITY via BigInteger in the migration.
+# Integer PK works on both dialects: a 64-bit rowid on SQLite, a 32-bit
+# auto-increment identity on Postgres. Ample for this app's user count; the
+# migration (0001) defines the same Integer type, so the two stay in lockstep.
 _pk_type = Integer
 
 users = Table(
