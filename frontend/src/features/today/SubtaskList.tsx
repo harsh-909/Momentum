@@ -24,9 +24,11 @@ export interface SubtaskListProps {
   date: DateStr
   goal: Goal
   readonly: boolean
+  /** Whether subtask check toggles are live (today/future, plus yesterday). */
+  checkable: boolean
 }
 
-export function SubtaskList({ date, goal, readonly }: SubtaskListProps) {
+export function SubtaskList({ date, goal, readonly, checkable }: SubtaskListProps) {
   const reorderSubtask = useAppStore((s) => s.reorderSubtask)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -51,7 +53,14 @@ export function SubtaskList({ date, goal, readonly }: SubtaskListProps) {
       >
         <div className="mt-2.5 space-y-1.5">
           {goal.subtasks.map((sub) => (
-            <SubtaskRow key={sub.id} date={date} goalId={goal.id} subtask={sub} readonly={readonly} />
+            <SubtaskRow
+              key={sub.id}
+              date={date}
+              goalId={goal.id}
+              subtask={sub}
+              readonly={readonly}
+              checkable={checkable}
+            />
           ))}
         </div>
       </SortableContext>

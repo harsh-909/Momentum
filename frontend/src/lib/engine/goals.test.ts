@@ -17,7 +17,7 @@ import {
   toggleGoal,
   toggleSubtask,
 } from './goals'
-import { FUTURE, makeGoal, makeSnapshot, makeSubtask, PAST, seedGoalOn, TODAY } from './testFactories'
+import { FUTURE, makeGoal, makeSnapshot, makeSubtask, PAST, seedGoalOn, TODAY, YESTERDAY } from './testFactories'
 
 describe('cleanText', () => {
   it('drops blank lines', () => expect(cleanText('a\n\n\nb')).toBe('a\nb'))
@@ -111,11 +111,18 @@ describe('toggleGoal', () => {
     toggleGoal(data, TODAY, g.id, TODAY)
     expect(g.loggedHours).toBe(1.5)
   })
-  it('is a no-op on a read-only past day (returns false)', () => {
+  it('is a no-op on an older read-only past day (returns false)', () => {
     const data = makeSnapshot()
     const g = seedGoalOn(data, PAST)
     expect(toggleGoal(data, PAST, g.id, TODAY)).toBe(false)
     expect(g.completed).toBe(false)
+  })
+  it('IS allowed on yesterday (grace window: a forgotten tick can still land)', () => {
+    const data = makeSnapshot()
+    const g = seedGoalOn(data, YESTERDAY, { subtasks: [makeSubtask()] })
+    expect(toggleGoal(data, YESTERDAY, g.id, TODAY)).toBe(true)
+    expect(g.completed).toBe(true)
+    expect(g.subtasks.every((s) => s.completed)).toBe(true)
   })
   it('returns false for an unknown goal id', () => {
     const data = makeSnapshot()
@@ -155,11 +162,19 @@ describe('toggleSubtask', () => {
     toggleSubtask(data, TODAY, g.id, g.subtasks[1].id, TODAY) // re-check
     expect(g.loggedHours).toBe(1.75)
   })
-  it('is a no-op on a read-only past day', () => {
+  it('is a no-op on an older read-only past day', () => {
     const data = makeSnapshot()
     const g = seedGoalOn(data, PAST, { subtasks: [makeSubtask()] })
     toggleSubtask(data, PAST, g.id, g.subtasks[0].id, TODAY)
     expect(g.subtasks[0].completed).toBe(false)
+  })
+  it('IS allowed on yesterday (grace window)', () => {
+    const data = makeSnapshot()
+    const g = seedGoalOn(data, YESTERDAY, { subtasks: [makeSubtask(), makeSubtask()] })
+    toggleSubtask(data, YESTERDAY, g.id, g.subtasks[0].id, TODAY)
+    expect(g.subtasks[0].completed).toBe(true)
+    toggleSubtask(data, YESTERDAY, g.id, g.subtasks[1].id, TODAY)
+    expect(g.completed).toBe(true) // all subtasks done -> parent auto-completes
   })
 })
 

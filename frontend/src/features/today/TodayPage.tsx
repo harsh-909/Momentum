@@ -13,7 +13,7 @@ import { Card } from '../../components/Card'
 import { EmptyState } from '../../components/EmptyState'
 import { isBacklogEligible } from '../../lib/engine/backlog'
 import { isEvening } from '../../lib/engine/copy'
-import { isReadonly } from '../../lib/engine/dates'
+import { isCheckable, isReadonly } from '../../lib/engine/dates'
 import { habitsOnDate } from '../../lib/engine/habits'
 import { useAppStore } from '../../store/useAppStore'
 import type { Goal } from '../../types/domain'
@@ -38,6 +38,9 @@ export function TodayPage() {
   const restoreToDay = useAppStore((s) => s.restoreToDay)
 
   const readonly = isReadonly(selectedDate, today)
+  // Yesterday stays read-only for edits but its check toggles stay live, so a
+  // forgotten tick can still be recorded (which recomputes the score/streak).
+  const checkable = isCheckable(selectedDate, today)
   const isFuture = selectedDate > today
   const futureHabitCount = isFuture ? habitsOnDate(data, selectedDate).length : 0
   const evening = isEvening(new Date().getHours())
@@ -108,7 +111,7 @@ export function TodayPage() {
       {selectedDate === today && <ComingUpPlans />}
 
       {isFuture && <FutureHabitHint count={futureHabitCount} />}
-      {readonly && <ReadonlyNotice />}
+      {readonly && <ReadonlyNotice checkable={checkable} />}
       {!readonly && <AddGoalForm date={selectedDate} />}
 
       {goals.length === 0 ? (
@@ -162,6 +165,7 @@ export function TodayPage() {
             date={selectedDate}
             goals={goals}
             readonly={readonly}
+            checkable={checkable}
             selection={selecting ? { active: true, selectedIds, onToggle: toggleSelect } : undefined}
           />
         </div>

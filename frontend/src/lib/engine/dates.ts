@@ -38,6 +38,26 @@ export function isReadonly(date: DateStr, today: DateStr): boolean {
   return date < today
 }
 
+/**
+ * True iff `date` is the single logical day before `today`. Yesterday is
+ * otherwise read-only, but it gets a grace exception: you can still tick off
+ * (only tick off) goals you forgot to check before the day rolled over, which
+ * live-recomputes that day's score, the streak, and the metrics. Any older
+ * past day stays fully frozen.
+ */
+export function isYesterday(date: DateStr, today: DateStr): boolean {
+  return date === shiftDateStr(today, -1)
+}
+
+/**
+ * Whether completion can still be toggled on `date`: today/future (fully
+ * editable) or yesterday (check-off only). This is deliberately narrower than
+ * "not read-only" - it gates ONLY the check toggles, never structural edits.
+ */
+export function isCheckable(date: DateStr, today: DateStr): boolean {
+  return !isReadonly(date, today) || isYesterday(date, today)
+}
+
 /** Shift a date string by whole days (DST-safe via local-midnight parse). */
 export function shiftDateStr(date: DateStr, delta: number): DateStr {
   const d = parseLocalDate(date)

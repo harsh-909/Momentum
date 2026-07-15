@@ -1,7 +1,9 @@
 /**
  * One subtask in display mode: sortable drag handle, check toggle, text, and
  * (once completed) a compact "took" time-log row that rolls up to the goal.
- * Read-only days: the toggle is disabled and no time input renders.
+ * Read-only days: the toggle is disabled and no time input renders. Yesterday
+ * is the exception - its toggle stays live (check-off grace) but, being
+ * read-only, still shows no time input.
  */
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -16,9 +18,11 @@ export interface SubtaskRowProps {
   goalId: string
   subtask: Subtask
   readonly: boolean
+  /** Whether the check toggle is live (today/future, plus yesterday's grace). */
+  checkable: boolean
 }
 
-export function SubtaskRow({ date, goalId, subtask, readonly }: SubtaskRowProps) {
+export function SubtaskRow({ date, goalId, subtask, readonly, checkable }: SubtaskRowProps) {
   const toggleSubtask = useAppStore((s) => s.toggleSubtask)
   const logSubtaskTime = useAppStore((s) => s.logSubtaskTime)
 
@@ -47,7 +51,7 @@ export function SubtaskRow({ date, goalId, subtask, readonly }: SubtaskRowProps)
         )}
         <CheckToggle
           checked={subtask.completed}
-          disabled={readonly}
+          disabled={!checkable}
           label={subtask.text || 'subtask'}
           onChange={() => toggleSubtask(date, goalId, subtask.id)}
           className="h-[18px]! w-[18px]!"

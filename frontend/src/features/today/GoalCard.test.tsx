@@ -22,11 +22,16 @@ afterEach(() => {
 
 /** Render one goal through GoalList so dnd-kit context is real. The confirm
  *  dialog host is included so destructive actions can be driven end to end. */
-function renderGoal(goal: Goal, opts: Parameters<typeof seedStore>[0] = {}, readonly = false) {
+function renderGoal(
+  goal: Goal,
+  opts: Parameters<typeof seedStore>[0] = {},
+  readonly = false,
+  checkable = !readonly,
+) {
   seedStore({ goals: { [TODAY]: [goal] }, ...opts })
   return render(
     <>
-      <GoalList date={TODAY} goals={[goal]} readonly={readonly} />
+      <GoalList date={TODAY} goals={[goal]} readonly={readonly} checkable={checkable} />
       <ConfirmDialogHost />
     </>,
   )
@@ -41,6 +46,13 @@ describe('GoalCard actions', () => {
   it('disables the checkbox and hides the action rail when readonly', () => {
     renderGoal(makeGoal({ topic: 'Frozen' }), {}, true)
     expect(screen.getByRole('checkbox', { name: 'Frozen' })).toBeDisabled()
+    expect(screen.queryByTitle('Edit goal')).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Delete')).not.toBeInTheDocument()
+  })
+
+  it('keeps the checkbox live on yesterday (readonly + checkable) but still hides edits', () => {
+    renderGoal(makeGoal({ topic: 'Missed' }), {}, true, true)
+    expect(screen.getByRole('checkbox', { name: 'Missed' })).toBeEnabled()
     expect(screen.queryByTitle('Edit goal')).not.toBeInTheDocument()
     expect(screen.queryByTitle('Delete')).not.toBeInTheDocument()
   })

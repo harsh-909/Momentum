@@ -5,12 +5,14 @@ import {
   currentDay,
   dateStr,
   formatDisplayDate,
+  isCheckable,
   isReadonly,
+  isYesterday,
   nextRolloverDelay,
   parseLocalDate,
   shiftDateStr,
 } from './dates'
-import { makeGoal, PAST, TODAY } from './testFactories'
+import { makeGoal, FUTURE, PAST, TODAY, YESTERDAY } from './testFactories'
 
 describe('dateStr / parseLocalDate', () => {
   it('formats YYYY-MM-DD zero-padded', () => {
@@ -54,6 +56,25 @@ describe('isReadonly', () => {
   it('past day is read-only', () => expect(isReadonly(PAST, TODAY)).toBe(true))
   it('today is editable', () => expect(isReadonly(TODAY, TODAY)).toBe(false))
   it('future day is editable', () => expect(isReadonly('2026-07-05', TODAY)).toBe(false))
+})
+
+describe('isYesterday', () => {
+  it('is true only for the single day before today', () =>
+    expect(isYesterday(YESTERDAY, TODAY)).toBe(true))
+  it('is false for today', () => expect(isYesterday(TODAY, TODAY)).toBe(false))
+  it('is false for two days ago', () => expect(isYesterday(PAST, TODAY)).toBe(false))
+  it('is false for the future', () => expect(isYesterday(FUTURE, TODAY)).toBe(false))
+  it('respects month boundaries', () => expect(isYesterday('2026-06-30', '2026-07-01')).toBe(true))
+})
+
+describe('isCheckable', () => {
+  it('today and future are checkable', () => {
+    expect(isCheckable(TODAY, TODAY)).toBe(true)
+    expect(isCheckable(FUTURE, TODAY)).toBe(true)
+  })
+  it('yesterday is checkable (the grace window)', () =>
+    expect(isCheckable(YESTERDAY, TODAY)).toBe(true))
+  it('older past days are NOT checkable', () => expect(isCheckable(PAST, TODAY)).toBe(false))
 })
 
 describe('shiftDateStr', () => {
