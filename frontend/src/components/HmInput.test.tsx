@@ -20,6 +20,17 @@ describe('HmInput', () => {
     expect(screen.getByLabelText('planned minutes')).toHaveValue(45)
   })
 
+  it('renders a zero part as an empty field (no leading "0"), not a literal 0', () => {
+    // 1h 0m: hours shows 1, minutes shows empty rather than "0" so typing is clean.
+    render(<HmInput valueHours={1} onChange={() => {}} label="planned" />)
+    expect(screen.getByLabelText('planned hours')).toHaveValue(1)
+    expect(screen.getByLabelText('planned minutes')).toHaveValue(null)
+    // 0h 0m: both empty.
+    render(<HmInput valueHours={0} onChange={() => {}} label="took" />)
+    expect(screen.getByLabelText('took hours')).toHaveValue(null)
+    expect(screen.getByLabelText('took minutes')).toHaveValue(null)
+  })
+
   it('combines h + m into decimal hours on change', () => {
     const onChange = vi.fn()
     render(<HmInput valueHours={1.5} onChange={onChange} label="planned" />)
