@@ -48,7 +48,7 @@ Use the `/ship` command to run this whole flow. `gh` (GitHub CLI) must be instal
 
 "Momentum" - a daily-goals / habit tracker.
 This branch (`momentum-2.0`) is the full rewrite: `frontend/` (React 19 + Vite + TypeScript + Tailwind v4 + Zustand) and `backend/` (FastAPI + SQLAlchemy 2 async + Alembic).
-The 1.x single-file Alpine app still runs from the `main` branch; `legacy/` here is a frozen read-only reference for the engine port - never edit it.
+The pre-rewrite 1.x single-file Alpine app is preserved in git history; its former `legacy/` reference copy was removed once the engine port was complete.
 `CONTRACT.md` pins the wire contract (API routes/shapes) and the engine function signatures; keep it in sync with any signature change.
 `userData/` holds real personal data, is gitignored, and must never be committed or moved.
 

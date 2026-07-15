@@ -3,7 +3,7 @@
 A daily-goals and habit tracker built around one honest question: how did the time you planned compare to the time you actually spent?
 
 Version 2.0 is a full rewrite: React 19 + TypeScript + Tailwind v4 frontend, FastAPI + Postgres backend, deployable free on Vercel + Render + Neon.
-The 1.x single-file Alpine.js app lives on the `main` branch (frozen reference copy in `legacy/`).
+The 1.x single-file Alpine.js app is preserved in git history (the former `legacy/` reference copy was removed once the rewrite stabilized).
 
 ## Features
 
@@ -21,7 +21,6 @@ The 1.x single-file Alpine.js app lives on the `main` branch (frozen reference c
 ```
 frontend/   React 19 + Vite + TS + Tailwind v4 + Zustand (business logic in src/lib/engine - pure, framework-free)
 backend/    FastAPI + SQLAlchemy 2 async + Alembic (SQLite locally, Postgres in prod)
-legacy/     Frozen 1.x app (reference for the engine port)
 CONTRACT.md The wire + engine contracts the workstreams built against
 DEPLOYMENT.md  Step-by-step free-tier deploy (Neon + Render + Vercel)
 STACK_RATIONALE.md  Why the stack is shaped this way (Postgres+JSONB, Neon, custom auth)
