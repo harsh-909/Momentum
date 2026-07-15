@@ -73,6 +73,11 @@ export function toggleGoal(data: Snapshot, date: DateStr, goalId: string, today:
   if (!isCheckable(date, today)) return false
   const g = findGoal(data, date, goalId)
   if (!g) return false
+  // Yesterday's grace window is check-off ONLY: a forgotten tick can still
+  // land, but an already-done goal cannot be UN-completed - that would rewrite
+  // a finished day's record (lowering its score / breaking a streak). On a
+  // past-but-checkable day, allow the undone -> done transition and nothing else.
+  if (isReadonly(date, today) && g.completed) return false
   g.completed = !g.completed
   if (g.completed) {
     g.subtasks.forEach((s) => {
@@ -94,12 +99,16 @@ export function toggleSubtask(
   subtaskId: string,
   today: DateStr,
 ): void {
-  // Subtask check-off shares the goal check-off grace window (yesterday too).
+  // Subtask check-off shares the goal check-off grace window (yesterday too),
+  // and the same one-way rule: on a past-but-checkable day you can complete a
+  // forgotten subtask, but not un-check a done one (which would re-open the
+  // parent and rewrite that day's score).
   if (!isCheckable(date, today)) return
   const g = findGoal(data, date, goalId)
   if (!g) return
   const st = g.subtasks.find((s) => s.id === subtaskId)
   if (!st) return
+  if (isReadonly(date, today) && st.completed) return
   st.completed = !st.completed
   g.completed = g.subtasks.length > 0 && g.subtasks.every((s) => s.completed)
   recomputeGoalLogged(g)

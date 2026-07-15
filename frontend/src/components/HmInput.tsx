@@ -59,7 +59,11 @@ export function HmInput({
         min={0}
         max={24}
         step={1}
-        value={h}
+        // Show an empty field (not a literal "0") for a zero value, so typing a
+        // number doesn't leave a leading zero like "05"; the placeholder still
+        // signals zero. An emptied field commits back to 0.
+        value={h === 0 ? '' : h}
+        placeholder="0"
         disabled={disabled}
         autoFocus={autoFocus}
         aria-label={`${label} hours`}
@@ -73,7 +77,9 @@ export function HmInput({
         min={0}
         max={55}
         step={5}
-        value={m}
+        // Same as hours: empty rather than a literal "0" so typed values stay clean.
+        value={m === 0 ? '' : m}
+        placeholder="0"
         disabled={disabled}
         aria-label={`${label} minutes`}
         onChange={(e) => commit(h, Number(e.target.value))}

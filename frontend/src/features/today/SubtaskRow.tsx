@@ -51,7 +51,9 @@ export function SubtaskRow({ date, goalId, subtask, readonly, checkable }: Subta
         )}
         <CheckToggle
           checked={subtask.completed}
-          disabled={!checkable}
+          // Grace window is check-off only: a done subtask on a past day can't
+          // be un-ticked (would re-open the parent and rewrite that day's score).
+          disabled={!checkable || (readonly && subtask.completed)}
           label={subtask.text || 'subtask'}
           onChange={() => toggleSubtask(date, goalId, subtask.id)}
           className="h-[18px]! w-[18px]!"

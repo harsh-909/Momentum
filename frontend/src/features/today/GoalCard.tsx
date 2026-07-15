@@ -122,7 +122,9 @@ export function GoalCard({ date, goal, readonly, checkable, selection }: GoalCar
         <span ref={checkRef} className="mt-0.5 shrink-0">
           <CheckToggle
             checked={goal.completed}
-            disabled={!checkable || selecting}
+            // Grace window is check-off only: once a past day's goal is done it
+            // can't be un-ticked (engine enforces this too - defense in depth).
+            disabled={!checkable || selecting || (readonly && goal.completed)}
             label={goal.topic}
             onChange={handleToggle}
           />
