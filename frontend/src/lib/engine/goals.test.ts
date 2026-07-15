@@ -124,6 +124,19 @@ describe('toggleGoal', () => {
     expect(g.completed).toBe(true)
     expect(g.subtasks.every((s) => s.completed)).toBe(true)
   })
+  it('will NOT un-complete a done goal on yesterday (check-off only, no rewriting the day)', () => {
+    const data = makeSnapshot()
+    const g = seedGoalOn(data, YESTERDAY, { completed: true, subtasks: [makeSubtask({ completed: true })] })
+    expect(toggleGoal(data, YESTERDAY, g.id, TODAY)).toBe(false)
+    expect(g.completed).toBe(true) // stays done - the grace window is one-way
+    expect(g.subtasks[0].completed).toBe(true)
+  })
+  it('still un-completes a done goal on today (grace rule applies only to past days)', () => {
+    const data = makeSnapshot()
+    const g = seedGoalOn(data, TODAY, { completed: true })
+    expect(toggleGoal(data, TODAY, g.id, TODAY)).toBe(false)
+    expect(g.completed).toBe(false) // today is fully editable both ways
+  })
   it('returns false for an unknown goal id', () => {
     const data = makeSnapshot()
     expect(toggleGoal(data, TODAY, 'nope', TODAY)).toBe(false)
@@ -175,6 +188,16 @@ describe('toggleSubtask', () => {
     expect(g.subtasks[0].completed).toBe(true)
     toggleSubtask(data, YESTERDAY, g.id, g.subtasks[1].id, TODAY)
     expect(g.completed).toBe(true) // all subtasks done -> parent auto-completes
+  })
+  it('will NOT un-check a done subtask on yesterday (check-off only, parent stays done)', () => {
+    const data = makeSnapshot()
+    const g = seedGoalOn(data, YESTERDAY, {
+      completed: true,
+      subtasks: [makeSubtask({ completed: true }), makeSubtask({ completed: true })],
+    })
+    toggleSubtask(data, YESTERDAY, g.id, g.subtasks[0].id, TODAY)
+    expect(g.subtasks[0].completed).toBe(true) // un-check refused
+    expect(g.completed).toBe(true) // parent not re-opened
   })
 })
 

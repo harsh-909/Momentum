@@ -62,14 +62,27 @@ describe('SubtaskRow', () => {
     expect(screen.queryByText('took')).not.toBeInTheDocument()
   })
 
-  it('yesterday (readonly + checkable): live checkbox but still no time input', () => {
+  it('yesterday (readonly + checkable): an unfinished subtask can still be ticked, no time input', () => {
+    const goal = makeGoal({
+      subtasks: [makeSubtask({ text: 'step' })],
+    })
+    seedStore({ goals: { [TODAY]: [goal] } })
+    render(<SubtaskList date={TODAY} goal={goal} readonly={true} checkable={true} />)
+
+    // Grace window: a forgotten (incomplete) subtask stays checkable...
+    expect(screen.getByRole('checkbox', { name: 'step' })).toBeEnabled()
+    expect(screen.queryByText('took')).not.toBeInTheDocument()
+  })
+
+  it('yesterday (readonly + checkable): a DONE subtask is locked (check-off only, no un-ticking)', () => {
     const goal = makeGoal({
       subtasks: [makeSubtask({ text: 'step', completed: true, loggedHours: 0.5 })],
     })
     seedStore({ goals: { [TODAY]: [goal] } })
     render(<SubtaskList date={TODAY} goal={goal} readonly={true} checkable={true} />)
 
-    expect(screen.getByRole('checkbox', { name: 'step' })).toBeEnabled()
+    // ...but an already-completed one can't be un-ticked (would rewrite the day).
+    expect(screen.getByRole('checkbox', { name: 'step' })).toBeDisabled()
     expect(screen.queryByText('took')).not.toBeInTheDocument()
   })
 
