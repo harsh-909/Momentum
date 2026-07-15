@@ -1,11 +1,15 @@
 """End-to-end smoke against a locally running API (default http://127.0.0.1:8000).
 
-Drives the full client lifecycle over the wire: health, signup, me, save v0,
-load, CAS save, stale-version conflict, wrong-password 401, export, logout.
-Exits non-zero on the first failed expectation.
+Drives the full client lifecycle over the wire: health, signup + email
+verification, me, save v0, load, CAS save, stale-version conflict,
+wrong-password 401, export, logout.
+
+Requires the API to run in dev mode (no RESEND_API_KEY): the verification code
+is read from the mailer's dev code file. Exits non-zero on the first failure.
 """
 import json
 import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -13,6 +17,9 @@ import httpx
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000"
 USER = "smoketest"
 PASS = "smokepass123"
+EMAIL = "smoketest@example.com"
+# Matches app/email.DEV_CODE_FILE default, relative to the API's cwd (backend/).
+DEV_CODE_FILE = Path(__file__).resolve().parents[1] / ".dev_codes.json"
 
 checks: list[str] = []
 
@@ -25,22 +32,49 @@ def ok(name: str, cond: bool, extra: str = "") -> None:
     print(f"ok   {name}")
 
 
+def read_code(email: str) -> str:
+    """Read the latest dev verification code for an address (retries briefly)."""
+    for _ in range(20):
+        try:
+            data = json.loads(DEV_CODE_FILE.read_text(encoding="utf-8"))
+            if email in data:
+                return data[email]
+        except (OSError, ValueError):
+            pass
+        time.sleep(0.1)
+    raise SystemExit(
+        f"FAIL could not read dev code for {email} from {DEV_CODE_FILE}. "
+        "Is the API running in dev mode (no RESEND_API_KEY)?"
+    )
+
+
+def register(c: httpx.Client, user: str, email: str) -> dict:
+    """Signup + verify over the wire; returns the Authorization header."""
+    r = c.post("/api/auth/signup", json={"username": user, "password": PASS, "email": email})
+    ok(f"signup 202 ({user})", r.status_code == 202 and r.json()["kind"] == "verify", r.text)
+    pending = r.json()["pendingToken"]
+    r = c.post("/api/auth/verify-email", json={"pendingToken": pending, "code": read_code(email)})
+    ok(f"verify -> session ({user})", r.status_code == 200 and r.json()["kind"] == "authed", r.text)
+    return {"Authorization": f"Bearer {r.json()['token']}"}
+
+
 def main() -> None:
     c = httpx.Client(base_url=BASE, timeout=10)
 
     r = c.get("/api/health")
     ok("health", r.status_code == 200 and r.json() == {"status": "ok"})
 
-    r = c.post("/api/auth/signup", json={"username": USER, "password": PASS})
-    ok("signup 201", r.status_code == 201, r.text)
-    token = r.json()["token"]
-    auth = {"Authorization": f"Bearer {token}"}
+    auth = register(c, USER, EMAIL)
 
-    r = c.post("/api/auth/signup", json={"username": USER, "password": PASS})
-    ok("dup signup 409", r.status_code == 409 and r.json()["error"] == "username_unavailable")
+    r = c.post("/api/auth/signup", json={"username": USER, "password": PASS, "email": EMAIL})
+    ok("dup verified username 409", r.status_code == 409 and r.json()["error"] == "username_unavailable")
+
+    r = c.post("/api/auth/verify-email", json={"pendingToken": "bogus", "code": "000000"})
+    ok("verify bad token 400", r.status_code == 400 and r.json()["error"] == "invalid_code")
 
     r = c.get("/api/auth/me", headers=auth)
-    ok("me", r.status_code == 200 and r.json()["username"] == USER)
+    ok("me", r.status_code == 200 and r.json()["username"] == USER
+       and r.json()["email"] == EMAIL and r.json()["emailVerified"] is True)
 
     r = c.get("/api/data", headers=auth)
     ok("fresh load v0", r.status_code == 200 and r.json()["version"] == 0 and r.json()["data"] is None)
@@ -88,8 +122,7 @@ def main() -> None:
     # Legacy import parity: PUT the real v1 userData file shape if present.
     legacy = Path(__file__).resolve().parents[2] / "userData" / "harsh.json"
     if legacy.exists():
-        r = c.post("/api/auth/signup", json={"username": "smokelegacy", "password": PASS})
-        t2 = {"Authorization": f"Bearer {r.json()['token']}"}
+        t2 = register(c, "smokelegacy", "smokelegacy@example.com")
         doc = json.loads(legacy.read_text(encoding="utf-8"))
         r = c.put("/api/data", headers=t2, json={"version": 0, "data": doc})
         ok("legacy v1 snapshot accepted", r.status_code == 200, r.text)

@@ -12,6 +12,7 @@ request validation errors) render in the contract shape.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import secrets
 import threading
 import time
@@ -86,6 +87,43 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+# --------------------------------------------------------------------------
+# Email verification codes
+# --------------------------------------------------------------------------
+
+# Fallback pepper for local dev/test when no VERIFICATION_SECRET is set. In
+# production the env var supplies a strong random value.
+_DEV_VERIFICATION_SECRET = "dev-only-momentum-verification-pepper"
+
+
+def _verification_secret() -> str:
+    return get_settings().verification_secret or _DEV_VERIFICATION_SECRET
+
+
+def generate_code() -> str:
+    """A 6-digit numeric code, uniformly random, zero-padded."""
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def hash_code(code: str) -> str:
+    """HMAC-SHA256 of the code under the server pepper (not bare SHA-256), so a
+    leaked table can't be brute-forced offline against the 1e6 code space."""
+    return hmac.new(
+        _verification_secret().encode("utf-8"), code.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+
+
+def verify_code(code_hash: str, code: str) -> bool:
+    """Constant-time comparison to avoid leaking the code via timing."""
+    return hmac.compare_digest(hash_code(code), code_hash)
+
+
+def new_pending_token() -> tuple[str, str]:
+    """Return (opaque token for the client, sha256 hash for storage)."""
+    token = secrets.token_urlsafe(32)
+    return token, hash_token(token)
+
+
 def bearer_token(request: Request) -> str | None:
     header = request.headers.get("authorization") or ""
     scheme, _, credentials = header.partition(" ")
@@ -136,10 +174,19 @@ class Unauthorized(StarletteHTTPException):
 class CurrentUser:
     """Authenticated user context handed to route handlers."""
 
-    def __init__(self, id: int, username: str, created_at: Any) -> None:
+    def __init__(
+        self,
+        id: int,
+        username: str,
+        created_at: Any,
+        email: str | None = None,
+        email_verified: bool = True,
+    ) -> None:
         self.id = id
         self.username = username
         self.created_at = created_at
+        self.email = email
+        self.email_verified = email_verified
 
 
 async def get_current_user(
@@ -152,7 +199,14 @@ async def get_current_user(
 
     token_hash = hash_token(token)
     stmt = (
-        select(users.c.id, users.c.username, users.c.created_at, sessions.c.expires_at)
+        select(
+            users.c.id,
+            users.c.username,
+            users.c.created_at,
+            users.c.email,
+            users.c.email_verified,
+            sessions.c.expires_at,
+        )
         .select_from(sessions.join(users, sessions.c.user_id == users.c.id))
         .where(sessions.c.token_hash == token_hash)
     )
@@ -176,7 +230,13 @@ async def get_current_user(
         )
         await db.commit()
 
-    return CurrentUser(id=row.id, username=row.username, created_at=as_utc(row.created_at))
+    return CurrentUser(
+        id=row.id,
+        username=row.username,
+        created_at=as_utc(row.created_at),
+        email=row.email,
+        email_verified=bool(row.email_verified),
+    )
 
 
 def install_exception_handlers(app: FastAPI) -> None:
@@ -210,6 +270,16 @@ LOGIN_IP_LIMIT = 20
 LOGIN_IP_WINDOW = 60 * 60
 SIGNUP_IP_LIMIT = 5
 SIGNUP_IP_WINDOW = 60 * 60
+
+# Email-verification limits: throttle code emails (per address and per IP, to
+# blunt inbox spam and enumeration) and verify attempts per IP across accounts
+# (the per-code attempt cap lives in the DB row).
+VERIFY_SEND_EMAIL_LIMIT = 5
+VERIFY_SEND_EMAIL_WINDOW = 60 * 60
+VERIFY_SEND_IP_LIMIT = 15
+VERIFY_SEND_IP_WINDOW = 60 * 60
+VERIFY_ATTEMPT_IP_LIMIT = 30
+VERIFY_ATTEMPT_IP_WINDOW = 15 * 60
 
 
 class RateLimiter:

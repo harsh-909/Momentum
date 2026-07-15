@@ -129,7 +129,12 @@ function SectionHeading({ eyebrow, title }: { eyebrow: string; title: string }) 
   )
 }
 
-export function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
+export function LandingPage({
+  onGetStarted,
+}: {
+  /** Opens the auth card; `signup` for "Get started", `login` for returning users. */
+  onGetStarted: (mode?: 'login' | 'signup') => void
+}) {
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-4 sm:px-6">
       {/* Top bar */}
@@ -137,7 +142,7 @@ export function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
         <div className="font-display text-sm label-caps text-accent-text">Momentum</div>
         <div className="flex items-center gap-2">
           <ThemeToggle />
-          <Button variant="secondary" size="md" onClick={onGetStarted}>
+          <Button variant="secondary" size="md" onClick={() => onGetStarted('login')}>
             Log in
           </Button>
         </div>
@@ -160,10 +165,20 @@ export function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
             you planned compare to the time you actually spent?
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3 md:justify-start">
-            <Button variant="primary" size="md" onClick={onGetStarted} className="px-6 py-2.5">
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => onGetStarted('signup')}
+              className="px-6 py-2.5"
+            >
               Get started
             </Button>
-            <Button variant="secondary" size="md" onClick={onGetStarted} className="px-6 py-2.5">
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => onGetStarted('login')}
+              className="px-6 py-2.5"
+            >
               I already have an account
             </Button>
           </div>
@@ -221,7 +236,12 @@ export function LandingPage({ onGetStarted }: { onGetStarted: () => void }) {
           Free to use. Your goals, habits, and history stay private to your account.
         </p>
         <div className="mt-6 flex justify-center">
-          <Button variant="primary" size="md" onClick={onGetStarted} className="px-6 py-2.5">
+          <Button
+            variant="primary"
+            size="md"
+            onClick={() => onGetStarted('signup')}
+            className="px-6 py-2.5"
+          >
             Get started
           </Button>
         </div>

@@ -20,7 +20,8 @@ Every feature we **add / update / remove** is a checkbox item across three secti
 
 ## 🚧 In Progress
 
-- [ ] **Public landing / home page** - anonymous visitors now see a marketing home page (hero with a decorative Day Dial, capabilities grid, how-it-works, CTAs) before sign-in, instead of landing straight on the login box. "Get started" / "Log in" reveal the existing sign-in card; a "Back" link returns to the home page. First step ahead of the mandatory-email/verification work.
+- [ ] **Mandatory email + verification** - accounts now require an email. Signup emails a 6-digit code (Resend in prod; logged to the console in dev) and no longer logs you straight in - you enter the code to activate. Login of a verified account works as before; unverified or pre-email (legacy) accounts are routed through add-email / verify-code first. Enumeration-safe (neutral responses + notice email to already-registered addresses), HMAC-hashed codes, attempt/expiry caps, rate limits. New endpoints: verify-email / resend-code / add-email; `users` gains email + email_verified (partial unique index on verified emails) plus an `email_verifications` table (Alembic 0002). Built on top of the landing page (merged in) since the flow extends the sign-in card. Needs `RESEND_API_KEY` + `VERIFICATION_SECRET` set at deploy time.
+- [ ] **Public landing / home page** - anonymous visitors see a marketing home page (hero with a decorative Day Dial, capabilities grid, how-it-works, CTAs) before sign-in. "Get started" opens create-account; "Log in" opens sign-in; a "Back" link returns to the home page. (Committed on `feat/landing-page`; folded into the email branch.)
 
 ## 📋 Not Completed
 
